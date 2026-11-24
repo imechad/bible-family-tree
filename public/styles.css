@@ -15,7 +15,9 @@
   --ai-bg: #231f3d;
   --warn-bg: #4a3a12;
   --error-bg: #4a1b1b;
-  --line: #4b5669;
+  --ink: #000;
+  --ink-casing: #7d8798;
+  --junction: #d4553f;
   --radius: 10px;
   font-size: 17px;
 }
@@ -175,7 +177,7 @@ button { font: inherit; color: inherit; }
   text-align: center;
   color: var(--muted);
 }
-.empty-state .big { font-size: 2rem; display: block; margin-bottom: 6px; }
+.empty-state .big { font-size: 2rem; display: block; margin-bottom: 6px; line-height: 0; }
 
 .tree-pane { position: relative; flex: 1; min-width: 0; display: flex; }
 .viewport {
@@ -191,23 +193,22 @@ button { font: inherit; color: inherit; }
 .sizer { position: relative; }
 .canvas { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 .links { position: absolute; top: 0; left: 0; overflow: visible; }
-.links path { fill: none; stroke: var(--line); stroke-width: 2; }
-.links path { opacity: .9; }
-/* !important: each family path carries an inline hue that must yield to the highlight */
-.links path.active { stroke: var(--accent) !important; stroke-width: 3; opacity: 1; }
-
-/* One bordered box per union: mom left, dad right, children's trunk drops
-   from its bottom centre. Border hue matches that family's connector. */
-.family-block {
-  position: absolute;
-  border: 2px solid #5b6b85;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, .035);
-  pointer-events: none;
-}
-.family-block.childless { border-style: dashed; }
-/* !important: the inline family hue must yield to the highlight */
-.family-block.active { border-color: var(--accent) !important; background: rgba(242, 193, 78, .07); }
+.links path { fill: none; stroke-linecap: round; }
+/* Parent → junction lines carry the parent's gender colour (same hues as the
+   cards); child lines are neutral ink so they never read as a parent's line. */
+.links .ln { stroke-width: 3; }
+.links .ln-dad { stroke: var(--male); }
+.links .ln-mom { stroke: var(--female); }
+.links .ln-child { stroke: var(--ink); stroke-width: 3.5; }
+.links .ln-casing { stroke: var(--ink-casing); stroke-width: 5.5; opacity: .55; }
+.links .junction { fill: var(--junction); stroke: #1d0d08; stroke-width: 1.5; }
+.links .union.childless .junction { opacity: .85; }
+/* Selected person's unions: thicker lines and a gold ring on the pill. Parent
+   lines keep their gender colour so the mom/dad coding never disappears. */
+.links .union.active .ln { stroke-width: 4.5; }
+.links .union.active .ln-child { stroke: #000; }
+.links .union.active .ln-casing { stroke: var(--accent); stroke-width: 7.5; }
+.links .junction.active { stroke: var(--accent); stroke-width: 3; }
 
 .legend {
   position: absolute; left: 14px; bottom: 14px; z-index: 5;
@@ -219,7 +220,20 @@ button { font: inherit; color: inherit; }
 }
 .legend .lg-female { color: var(--female); font-weight: 650; }
 .legend .lg-male { color: var(--male); font-weight: 650; }
-.legend .lg-block { border: 2px solid #5b6b85; border-radius: 6px; padding: 0 6px; }
+.legend .lg { display: inline-flex; align-items: center; gap: 4px; }
+.legend .lg-swatch { display: inline-block; width: 16px; height: 3px; border-radius: 2px; vertical-align: middle; }
+.legend .sw-dad { background: var(--male); }
+.legend .sw-mom { background: var(--female); }
+.legend .lg-pill {
+  display: inline-block; width: 7px; height: 14px; border-radius: 4px;
+  background: var(--junction); border: 1px solid #1d0d08;
+}
+
+/* Drawn icons (inline SVG in currentColor) instead of emoji, so they look the
+   same on every platform and scale with the text around them. */
+.icon { width: 1em; height: 1em; flex: none; vertical-align: -0.14em; }
+.icon-info { color: var(--ai); }
+.ai-badge .icon-info { color: #d6cfff; width: 1.05em; height: 1.05em; }
 
 .zoom-controls {
   position: absolute; right: 14px; bottom: 14px; z-index: 5;
@@ -268,7 +282,8 @@ button { font: inherit; color: inherit; }
 .node.female .n-meta { color: #eab3cf; }
 .node .n-name { font-weight: 650; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .node .n-meta { color: var(--muted); font-size: .8rem; white-space: nowrap; }
-.node .n-ai { position: absolute; top: 4px; right: 6px; font-size: .85rem; }
+.node .n-ai { position: absolute; top: 5px; right: 7px; font-size: 1rem; line-height: 0; }
+.results .r-info { display: inline-block; line-height: 0; font-size: .95rem; }
 .node .n-dup {
   position: absolute; bottom: 4px; right: 6px;
   font-size: .7rem; color: var(--accent);

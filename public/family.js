@@ -1,5 +1,5 @@
 /*
- * Shared family logic: derives children/siblings/spouses and family blocks
+ * Shared family logic: derives children/siblings/spouses and unions
  * from people.json, searches people by anything attached to them, and turns
  * scripture references into links.
  *
@@ -200,10 +200,10 @@
             if (!Array.isArray(s.spouses) || s.spouses.indexOf(p.id) === -1) {
               problems.push(who + ' lists spouse "' + sid + '" but "' + sid + '" does not list ' + who + ' back');
             }
-            // Family blocks put the mom on the left and the dad on the right,
-            // so a union needs exactly one of each to be drawable.
+            // The tree puts the mom on the left and the dad on the right of
+            // their junction, so a union needs exactly one of each to be drawable.
             if ((p.gender === 'male' || p.gender === 'female') && s.gender === p.gender) {
-              problems.push(who + ' and spouse "' + sid + '" are both ' + p.gender + ' (a family block needs a mom and a dad)');
+              problems.push(who + ' and spouse "' + sid + '" are both ' + p.gender + ' (a union needs a mom and a dad)');
             }
           });
         }
@@ -233,45 +233,46 @@
     return problems;
   }
 
-  // ------------------------------------------------------------ family blocks
+  // ------------------------------------------------------------ unions
 
   /**
-   * Derive the "unions" the tree draws as family blocks: one per distinct
-   * (mom, dad) pair that is married or has a child together, plus one per
-   * single parent. A remarried person therefore belongs to several blocks.
+   * Derive the "unions" the tree draws, each with its own junction marker:
+   * one per distinct (mom, dad) pair that is married or has a child
+   * together, plus one per single parent. A remarried person therefore
+   * belongs to several unions (and is drawn once per union).
    *
    * Derived (never stored) for the same reason children are: the data only
-   * records parents and spouses, so blocks can't disagree with them.
+   * records parents and spouses, so unions can't disagree with them.
    *
    * `include(id)` lets the UI leave out people it can't place on a row;
    * a parent who is excluded is treated as unrecorded.
    *
-   * Block order is meaningful: a remarried person's FIRST block is where
-   * their own parents' trunk line lands, so spousal unions are created first
+   * Union order is meaningful: a remarried person's FIRST union is where
+   * their own parents' child line lands, so spousal unions are created first
    * (in data order, then the order of each `spouses` list) and child-only
    * unions after.
    */
-  function deriveFamilyBlocks(index, include) {
+  function deriveUnions(index, include) {
     var ok = function (id) {
       return typeof id === 'string' && index.byId.has(id) && (!include || include(id));
     };
-    var blocks = [];
+    var unions = [];
     var byKey = new Map();
-    var blocksOf = new Map();
+    var unionsOf = new Map();
     function unionOf(mom, dad) {
       var key = (mom || '') + '|' + (dad || '');
-      var b = byKey.get(key);
-      if (!b) {
-        b = { key: key, mom: mom, dad: dad, children: [] };
-        byKey.set(key, b);
-        blocks.push(b);
+      var u = byKey.get(key);
+      if (!u) {
+        u = { key: key, mom: mom, dad: dad, children: [] };
+        byKey.set(key, u);
+        unions.push(u);
         [mom, dad].forEach(function (id) {
           if (!id) return;
-          if (!blocksOf.has(id)) blocksOf.set(id, []);
-          blocksOf.get(id).push(b);
+          if (!unionsOf.has(id)) unionsOf.set(id, []);
+          unionsOf.get(id).push(u);
         });
       }
-      return b;
+      return u;
     }
 
     index.byId.forEach(function (p) {
@@ -280,7 +281,7 @@
         if (!ok(sid)) return;
         var s = index.byId.get(sid);
         // Same-gender or unknown-gender pairs can't fill a mom/dad slot;
-        // validate() reports them, the tree just doesn't draw the block.
+        // validate() reports them, the tree just doesn't draw the union.
         if (p.gender === 'female' && s.gender === 'male') unionOf(p.id, sid);
         else if (p.gender === 'male' && s.gender === 'female') unionOf(sid, p.id);
       });
@@ -293,7 +294,40 @@
       if (mom || dad) unionOf(mom, dad).children.push(p.id);
     });
 
-    return { blocks: blocks, byKey: byKey, blocksOf: blocksOf };
+    return { unions: unions, byKey: byKey, unionsOf: unionsOf };
+  }
+
+  /**
+   * Where a union's junction pill sits and which lines meet it. Pure
+   * geometry (no DOM) so the drawing rules are unit-testable:
+   *   - each parent gets one line from the bottom-centre of their card down
+   *     to the top of the pill, tagged 'mom' or 'dad' so it can be drawn in
+   *     that parent's gender colour;
+   *   - each child gets one neutral line from the bottom of the pill up to
+   *     the top-centre of their card;
+   *   - a childless couple still gets the pill (the marriage stays visible)
+   *     but no child lines.
+   *
+   * parents: { mom: {x,y}|null, dad: {x,y}|null } — bottom-centre of cards.
+   * kids:    [{ id, x, y }] — top-centre of each child's card.
+   * opts:    { drop, pillW, pillH } — pill top sits `drop` px below the
+   *          lower parent card; sizes in px.
+   */
+  function junctionGeometry(parents, kids, opts) {
+    var ps = [['mom', parents.mom], ['dad', parents.dad]].filter(function (e) { return e[1]; });
+    if (!ps.length) return null;
+    // Midway between the parents, so neither looks like the "main" one;
+    // a single parent's junction sits straight below them.
+    var cx = ps.reduce(function (s, e) { return s + e[1].x; }, 0) / ps.length;
+    var top = Math.max.apply(null, ps.map(function (e) { return e[1].y; })) + opts.drop;
+    var j = { x: cx - opts.pillW / 2, y: top, w: opts.pillW, h: opts.pillH, cx: cx };
+    var lines = ps.map(function (e) {
+      return { kind: e[0], x1: e[1].x, y1: e[1].y, x2: cx, y2: top + 2 };
+    });
+    (kids || []).forEach(function (k) {
+      lines.push({ kind: 'child', id: k.id, x1: cx, y1: top + opts.pillH - 2, x2: k.x, y2: k.y });
+    });
+    return { junction: j, lines: lines };
   }
 
   // ------------------------------------------------------------ notes
@@ -508,7 +542,8 @@
     splitRefs: splitRefs,
     buildIndex: buildIndex,
     validate: validate,
-    deriveFamilyBlocks: deriveFamilyBlocks,
+    deriveUnions: deriveUnions,
+    junctionGeometry: junctionGeometry,
     noteViews: noteViews,
     fold: fold,
     parseQuery: parseQuery,

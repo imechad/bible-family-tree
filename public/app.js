@@ -4,22 +4,23 @@
 
   var F = window.Family;
 
-  // Card geometry. Rows leave a tall gap below each family block so the
-  // connector "bus" lines have room and don't run through names.
+  // Card geometry. Rows leave a tall gap below each union so the parent
+  // lines, the junction pill and the children's fan-out all have room and
+  // don't run through names.
   var NODE_W = 180;
   var NODE_H = 62;
-  var BLOCK_PAD = 8;    // border-to-card padding inside a family block
-  var COUPLE_GAP = 10;  // between mom and dad inside one block
-  var UNIT_GAP = 20;    // between siblings' blocks/cards
-  var FAMILY_GAP = 44;  // between different sibling groups
-  var ROW_H = NODE_H + 2 * BLOCK_PAD + 96;
+  var COUPLE_GAP = 44;  // between mom and dad: wide enough that the junction visibly sits between them
+  var UNIT_GAP = 22;    // between siblings' unions/cards
+  var FAMILY_GAP = 48;  // between different sibling groups
+  var ROW_GAP = 150;    // clear space between one row's cards and the next
+  var ROW_H = NODE_H + ROW_GAP;
+  // The junction pill sits a little above the middle of the gap, so the
+  // children's fan-out (usually wider) gets the longer, less steep run.
+  var JUNCTION = { drop: 52, pillW: 14, pillH: 30 };
   var MARGIN_LEFT = 52; // room for the vertical "Gen N" labels
   var MARGIN = 30;
   var ZOOM_MIN = 0.35;
   var ZOOM_MAX = 1.6;
-  // Muted so connectors stay behind the cards visually; distinct enough that
-  // neighbouring families' lines can be told apart.
-  var FAMILY_HUES = ['#6f8fbf', '#b98a96', '#7fa37a', '#c3a06a', '#9484c4', '#5fa8a0', '#b88462', '#8d9a5c'];
 
   var $ = function (id) { return document.getElementById(id); };
   var els = {
@@ -46,10 +47,9 @@
   var state = {
     index: null,
     people: [],       // renderable people, in data order
-    layout: null,     // { instances: Map(id -> [{x,y}]), blocks: [], width, height, ... }
-    nodeEls: new Map(),   // id -> [card elements]; a remarried person has one per block
-    familyEls: [],
-    blockEls: [],
+    layout: null,     // { instances: Map(id -> [{x,y}]), unions: [], width, height, ... }
+    nodeEls: new Map(),   // id -> [card elements]; a remarried person has one per union
+    unionEls: [],     // [{ els: [svg nodes], members: [ids] }] for highlight toggling
     selectedId: null,
     zoom: 1
   };
@@ -96,6 +96,41 @@
       title: 'Open ' + ref + ' (KJV) on BibleGateway',
       text: (label || ref) + ' ↗'
     });
+  }
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  /** Drawn icons instead of emoji: emoji render differently on every
+   *  platform (and as colourful clip-art on iOS), while an inline SVG in
+   *  currentColor stays crisp at any zoom and matches the UI's palette. */
+  function icon(name, paths) {
+    var s = document.createElementNS(SVG_NS, 'svg');
+    s.setAttribute('class', 'icon icon-' + name);
+    s.setAttribute('viewBox', '0 0 24 24');
+    s.setAttribute('aria-hidden', 'true');
+    s.setAttribute('focusable', 'false');
+    paths.forEach(function (d) {
+      var n = document.createElementNS(SVG_NS, d[0]);
+      Object.keys(d[1]).forEach(function (k) { n.setAttribute(k, d[1][k]); });
+      s.appendChild(n);
+    });
+    return s;
+  }
+  function infoIcon() {
+    return icon('info', [
+      ['circle', { cx: 12, cy: 12, r: 10, fill: 'none', stroke: 'currentColor', 'stroke-width': 2 }],
+      ['circle', { cx: 12, cy: 7.6, r: 1.45, fill: 'currentColor' }],
+      ['rect', { x: 10.85, y: 10.4, width: 2.3, height: 7.4, rx: 1.15, fill: 'currentColor' }]
+    ]);
+  }
+  function searchIcon() {
+    return icon('search', [
+      ['circle', { cx: 10.5, cy: 10.5, r: 6.5, fill: 'none', stroke: 'currentColor', 'stroke-width': 2 }],
+      ['path', { d: 'M15.5 15.5L21 21', stroke: 'currentColor', 'stroke-width': 2.4, 'stroke-linecap': 'round' }]
+    ]);
+  }
+  function aiBadge() {
+    return el('span', { class: 'ai-badge' }, [infoIcon(), 'AI-gathered notes']);
   }
 
   // ---------------------------------------------------------------- loading
@@ -180,51 +215,52 @@
   // ---------------------------------------------------------------- layout
 
   /**
-   * Generation rows, top to bottom, built from family blocks: each union
-   * (mom + dad, or a single parent) is one bordered block with the mom on
-   * the left and the dad on the right. People with no union are plain cards.
+   * Generation rows, top to bottom, built from unions: each union (mom +
+   * dad, or a single parent) is two (or one) separate cards side by side,
+   * mom on the left and dad on the right, with a junction pill between and
+   * below them. People with no union are plain cards.
    *
-   * Within a row, the blocks/cards of one set of siblings are centred under
-   * their parents' block, in birth order. Groups that would overlap are
+   * Within a row, the unions/cards of one set of siblings are centred under
+   * their parents' junction, in birth order. Groups that would overlap are
    * pushed right; that keeps this a single cheap pass, which matters once
    * the data holds hundreds of people.
    */
   function computeLayout(people) {
     var idx = state.index;
     var order = new Map(people.map(function (p, i) { return [p.id, i]; }));
-    var fb = F.deriveFamilyBlocks(idx, function (id) { return order.has(id); });
+    var fu = F.deriveUnions(idx, function (id) { return order.has(id); });
     var inTree = function (id) { return !!id && order.has(id); };
 
     function parentUnion(id) {
       var p = idx.byId.get(id);
       var mom = inTree(p.mom) && p.mom !== id ? p.mom : null;
       var dad = inTree(p.dad) && p.dad !== id ? p.dad : null;
-      return mom || dad ? fb.byKey.get((mom || '') + '|' + (dad || '')) : null;
+      return mom || dad ? fu.byKey.get((mom || '') + '|' + (dad || '')) : null;
     }
 
-    // A unit is what occupies a slot in a row: a family block or a lone card.
+    // A unit is what occupies a slot in a row: a union's cards or a lone card.
     var units = [];
-    fb.blocks.forEach(function (b) {
-      b.members = [b.mom, b.dad].filter(Boolean);
-      // A block sits on its later parent's row: children are always in a
+    fu.unions.forEach(function (un) {
+      un.members = [un.mom, un.dad].filter(Boolean);
+      // A union sits on its later parent's row: children are always in a
       // later generation than BOTH parents, so they stay below it.
-      b.gen = Math.max.apply(null, b.members.map(function (id) { return idx.byId.get(id).generation; }));
-      b.width = b.members.length * NODE_W + (b.members.length - 1) * COUPLE_GAP + 2 * BLOCK_PAD;
-      // Hang the block under the parents of whichever member has them (the
+      un.gen = Math.max.apply(null, un.members.map(function (id) { return idx.byId.get(id).generation; }));
+      un.width = un.members.length * NODE_W + (un.members.length - 1) * COUPLE_GAP;
+      // Hang the union under the parents of whichever member has them (the
       // "blood" relative); a married-in spouse rides along.
-      var anchor = b.members.filter(function (id) { return parentUnion(id); })
+      var anchor = un.members.filter(function (id) { return parentUnion(id); })
         .sort(function (a, c) { return order.get(a) - order.get(c); })[0] || null;
-      b.anchorPerson = anchor;
+      un.anchorPerson = anchor;
       units.push({
-        block: b, gen: b.gen, width: b.width, anchorPerson: anchor,
+        union: un, gen: un.gen, width: un.width, anchorPerson: anchor,
         anchorUnion: anchor ? parentUnion(anchor) : null,
-        // Remarried siblings keep their blocks side by side, in union order.
-        sub: anchor ? fb.blocksOf.get(anchor).indexOf(b) : 0,
-        first: Math.min.apply(null, b.members.map(function (id) { return order.get(id); }))
+        // Remarried siblings keep their unions side by side, in union order.
+        sub: anchor ? fu.unionsOf.get(anchor).indexOf(un) : 0,
+        first: Math.min.apply(null, un.members.map(function (id) { return order.get(id); }))
       });
     });
     people.forEach(function (p) {
-      if (fb.blocksOf.has(p.id)) return;
+      if (fu.unionsOf.has(p.id)) return;
       units.push({ id: p.id, gen: p.generation, width: NODE_W, anchorPerson: p.id,
         anchorUnion: parentUnion(p.id), sub: 0, first: order.get(p.id) });
     });
@@ -238,7 +274,7 @@
     }
 
     gens.forEach(function (g, rowIdx) {
-      var y = MARGIN + BLOCK_PAD + rowIdx * ROW_H;
+      var y = MARGIN + rowIdx * ROW_H;
       rowY.set(g, y);
       var groups = [];
       var groupOf = new Map();
@@ -279,16 +315,18 @@
         if (cursor !== null && left < cursor) left = cursor;
         grp.units.forEach(function (u) {
           u.x = left;
-          if (u.block) {
-            var b = u.block;
-            b.x = left;
-            b.y = y - BLOCK_PAD;
-            b.cx = left + b.width / 2;
-            b.members.forEach(function (id, i) {
-              addInstance(id, { x: left + BLOCK_PAD + i * (NODE_W + COUPLE_GAP), y: y, block: b });
+          if (u.union) {
+            var un = u.union;
+            un.x = left;
+            un.y = y;
+            // Same midpoint junctionGeometry() uses, so children centre
+            // under the pill their lines actually come from.
+            un.cx = left + un.width / 2;
+            un.members.forEach(function (id, i) {
+              addInstance(id, { x: left + i * (NODE_W + COUPLE_GAP), y: y, union: un });
             });
           } else {
-            addInstance(u.id, { x: left, y: y, block: null });
+            addInstance(u.id, { x: left, y: y, union: null });
           }
           left += u.width + UNIT_GAP;
         });
@@ -297,23 +335,23 @@
     });
 
     // Pushing groups right can leave content at negative x; shift everything
-    // so the leftmost block sits just right of the generation labels.
+    // so the leftmost union sits just right of the generation labels.
     var minX = Infinity, maxX = -Infinity;
     units.forEach(function (u) { minX = Math.min(minX, u.x); maxX = Math.max(maxX, u.x + u.width); });
     var shift = MARGIN_LEFT - minX;
-    fb.blocks.forEach(function (b) { b.x += shift; b.cx += shift; });
+    fu.unions.forEach(function (un) { un.x += shift; un.cx += shift; });
     instances.forEach(function (list) { list.forEach(function (inst) { inst.x += shift; }); });
 
-    // Where a child's trunk branch lands: the copy of them in a block that
-    // hangs under their parents (a remarried person appears more than once).
+    // Where a child's line lands: the copy of them in a union that hangs
+    // under their parents (a remarried person appears more than once).
     instances.forEach(function (list, id) {
-      var own = list.filter(function (inst) { return inst.block && inst.block.anchorPerson === id; })[0];
+      var own = list.filter(function (inst) { return inst.union && inst.union.anchorPerson === id; })[0];
       list.primary = own || list[0];
     });
 
     return {
       instances: instances,
-      blocks: fb.blocks,
+      unions: fu.unions,
       rowY: rowY,
       gens: gens,
       width: maxX + shift + MARGIN,
@@ -325,7 +363,7 @@
 
   function renderTree() {
     var L = state.layout;
-    var SVG = 'http://www.w3.org/2000/svg';
+    var SVG = SVG_NS;
     els.canvas.style.width = L.width + 'px';
     els.canvas.style.height = L.height + 'px';
     els.links.setAttribute('width', L.width);
@@ -333,74 +371,64 @@
     els.links.replaceChildren();
     els.nodes.replaceChildren();
     state.nodeEls.clear();
-    state.familyEls = [];
-    state.blockEls = [];
+    state.unionEls = [];
 
     L.gens.forEach(function (g) {
       var y = L.rowY.get(g);
-      if (y > MARGIN + BLOCK_PAD) els.nodes.appendChild(el('div', { class: 'gen-band', style: 'top:' + (y - BLOCK_PAD - (ROW_H - NODE_H - 2 * BLOCK_PAD) / 2 + 26) + 'px' }));
+      if (y > MARGIN) els.nodes.appendChild(el('div', { class: 'gen-band', style: 'top:' + (y - ROW_GAP / 2 + 26) + 'px' }));
       els.nodes.appendChild(el('div', { class: 'gen-label', style: 'top:' + y + 'px;height:' + NODE_H + 'px', text: 'Gen ' + g }));
     });
 
-    // Each block with children gets one trunk from its bottom centre down to
-    // a horizontal "bus", with a drop to each child. Buses in the same row
-    // whose spans overlap get different heights (greedy interval colouring),
-    // and each family gets its own hue — shared with its block's border — so
-    // crossing lines can't be misread as one family.
-    var families = L.blocks.filter(function (b) { return b.children.length; }).map(function (b) {
-      var kids = b.children.map(function (id) { return L.instances.get(id).primary; });
-      var xs = [b.cx].concat(kids.map(function (k) { return k.x + NODE_W / 2; }));
-      return {
-        block: b, kids: kids,
-        minX: Math.min.apply(null, xs), maxX: Math.max.apply(null, xs),
-        kidTop: Math.min.apply(null, kids.map(function (k) { return k.y; }))
-      };
-    });
-    var byRow = new Map();
-    families.forEach(function (fam) {
-      if (!byRow.has(fam.kidTop)) byRow.set(fam.kidTop, []);
-      byRow.get(fam.kidTop).push(fam);
-    });
-    var colorIdx = 0;
-    byRow.forEach(function (fams, kidTop) {
-      fams.sort(function (a, b) { return a.minX - b.minX; });
-      var levelEnds = [];
-      fams.forEach(function (fam) {
-        var lvl = levelEnds.findIndex(function (end) { return end < fam.minX - 12; });
-        if (lvl === -1) { lvl = levelEnds.length; levelEnds.push(0); }
-        levelEnds[lvl] = fam.maxX;
-        fam.level = lvl;
-      });
-      var gap = ROW_H - NODE_H - 2 * BLOCK_PAD; // clear space between block borders
-      var step = Math.min(14, (gap - 24) / Math.max(1, levelEnds.length - 1));
-      fams.forEach(function (fam) {
-        var b = fam.block;
-        var busY = kidTop - BLOCK_PAD - gap / 2 + (fam.level - (levelEnds.length - 1) / 2) * step;
-        var d = 'M' + b.cx + ',' + (b.y + NODE_H + 2 * BLOCK_PAD) + 'V' + busY;
-        fam.kids.forEach(function (k) { d += 'M' + (k.x + NODE_W / 2) + ',' + busY + 'V' + k.y; });
-        d += 'M' + fam.minX + ',' + busY + 'H' + fam.maxX;
-        var path = document.createElementNS(SVG, 'path');
-        path.setAttribute('d', d);
-        b.hue = FAMILY_HUES[colorIdx++ % FAMILY_HUES.length];
-        path.style.stroke = b.hue;
-        els.links.appendChild(path);
-        state.familyEls.push({ el: path, members: b.members.concat(b.children) });
-      });
-    });
+    function svg(tag, attrs) {
+      var n = document.createElementNS(SVG, tag);
+      Object.keys(attrs).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+      return n;
+    }
 
-    // Blocks go in before cards so cards stack on top of the border box.
-    L.blocks.forEach(function (b) {
-      var names = b.members.map(function (id) { return displayName(state.index.byId.get(id)); });
-      var blockEl = el('div', {
-        class: 'family-block' + (b.members.length === 1 ? ' single' : '') + (b.children.length ? '' : ' childless'),
-        style: 'left:' + b.x + 'px;top:' + b.y + 'px;width:' + b.width + 'px;height:' + (NODE_H + 2 * BLOCK_PAD) + 'px' +
-          (b.hue ? ';border-color:' + b.hue : ''),
-        title: (b.members.length === 2 ? 'Family: ' + names.join(' & ') : 'Single parent: ' + names[0]) +
-          (b.children.length ? ' — ' + b.children.length + ' child' + (b.children.length === 1 ? '' : 'ren') : ' — no children recorded'),
-        'aria-hidden': 'true'
+    // Every union gets a junction pill between and below its parents. Each
+    // parent's line down to it is drawn in their gender colour, so you can
+    // tell which line is mom's and which is dad's even where lines cross;
+    // every child's line fans out from the same pill in neutral ink, so
+    // siblings visibly share one meeting point. Lines first, pills on top.
+    var lineLayer = svg('g', { class: 'union-lines' });
+    var pillLayer = svg('g', { class: 'union-pills' });
+    els.links.appendChild(lineLayer);
+    els.links.appendChild(pillLayer);
+    L.unions.forEach(function (un) {
+      var at = function (id) {
+        var inst = id && (L.instances.get(id) || []).filter(function (i) { return i.union === un; })[0];
+        return inst ? { x: inst.x + NODE_W / 2, y: inst.y + NODE_H } : null;
+      };
+      var kids = un.children.map(function (id) {
+        var k = L.instances.get(id).primary;
+        return { id: id, x: k.x + NODE_W / 2, y: k.y };
       });
-      els.nodes.appendChild(blockEl);
-      state.blockEls.push({ el: blockEl, members: b.members });
+      var geo = F.junctionGeometry({ mom: at(un.mom), dad: at(un.dad) }, kids, JUNCTION);
+      if (!geo) return;
+      var parts = [];
+      var group = svg('g', { class: 'union' + (un.children.length ? '' : ' childless') });
+      geo.lines.forEach(function (ln) {
+        var d = 'M' + ln.x1 + ',' + ln.y1 + 'L' + ln.x2 + ',' + ln.y2;
+        if (ln.kind === 'child') {
+          // A light casing under the black ink keeps "black" child lines
+          // readable on the dark canvas without turning them grey.
+          group.appendChild(svg('path', { d: d, class: 'ln-casing' }));
+        }
+        group.appendChild(svg('path', { d: d, class: 'ln ln-' + ln.kind }));
+      });
+      lineLayer.appendChild(group);
+      var names = un.members.map(function (id) { return displayName(state.index.byId.get(id)); });
+      var pill = svg('rect', {
+        x: geo.junction.x, y: geo.junction.y, width: geo.junction.w, height: geo.junction.h,
+        rx: geo.junction.w / 2, class: 'junction'
+      });
+      var tip = document.createElementNS(SVG, 'title');
+      tip.textContent = (un.members.length === 2 ? names.join(' & ') : names[0] + ' (single parent)') +
+        (un.children.length ? ' — ' + un.children.length + ' child' + (un.children.length === 1 ? '' : 'ren') : ' — married, no children recorded');
+      pill.appendChild(tip);
+      pillLayer.appendChild(pill);
+      parts.push(group, pill);
+      state.unionEls.push({ els: parts, members: un.members.concat(un.children) });
     });
 
     state.people.forEach(function (p) {
@@ -409,8 +437,8 @@
       var notesCount = notesOf(p).length;
       var female = p.gender === 'female';
       var role = function (inst) {
-        if (!inst.block || inst.block.members.length < 2) return '';
-        return inst.block.mom === p.id ? ', mom in this family' : ', dad in this family';
+        if (!inst.union || inst.union.members.length < 2) return '';
+        return inst.union.mom === p.id ? ', mom in this family' : ', dad in this family';
       };
       state.nodeEls.set(p.id, list.map(function (inst, i) {
         var node = el('button', {
@@ -425,10 +453,10 @@
         }, [
           el('span', { class: 'n-name', text: displayName(p) }),
           el('span', { class: 'n-meta', text: genderMark(p.gender) + genderLabel(p.gender) + (age ? ' · age ' + age : '') }),
-          notesCount ? el('span', { class: 'n-ai', title: notesCount + ' AI-gathered note' + (notesCount === 1 ? '' : 's'), text: 'ℹ️' }) : null,
+          notesCount ? el('span', { class: 'n-ai', title: notesCount + ' AI-gathered note' + (notesCount === 1 ? '' : 's') }, [infoIcon()]) : null,
           list.length > 1 ? el('span', {
             class: 'n-dup',
-            title: 'Same person, drawn once in each of their ' + list.length + ' family blocks',
+            title: 'Same person, drawn once in each of their ' + list.length + ' unions',
             text: '⧉ ' + (i + 1) + '/' + list.length
           }) : null
         ]);
@@ -577,10 +605,14 @@
         node.classList.toggle('related', related.has(nid));
       });
     });
-    state.familyEls.forEach(function (f) { f.el.classList.toggle('active', f.members.indexOf(id) !== -1); });
-    state.blockEls.forEach(function (b) { b.el.classList.toggle('active', b.members.indexOf(id) !== -1); });
-    // Put highlighted connectors on top so they're not hidden under grey ones.
-    state.familyEls.forEach(function (f) { if (f.el.classList.contains('active')) els.links.appendChild(f.el); });
+    state.unionEls.forEach(function (u) {
+      var on = u.members.indexOf(id) !== -1;
+      u.els.forEach(function (n) {
+        n.classList.toggle('active', on);
+        // Put highlighted connectors on top so they're not hidden under others.
+        if (on) n.parentNode.appendChild(n);
+      });
+    });
 
     renderDetail(id);
     markCurrentResult();
@@ -602,8 +634,7 @@
     els.sizer.style.marginBottom = '';
     state.selectedId = null;
     state.nodeEls.forEach(function (nodes) { nodes.forEach(function (n) { n.classList.remove('selected', 'related'); }); });
-    state.familyEls.forEach(function (f) { f.el.classList.remove('active'); });
-    state.blockEls.forEach(function (b) { b.el.classList.remove('active'); });
+    state.unionEls.forEach(function (u) { u.els.forEach(function (n) { n.classList.remove('active'); }); });
     markCurrentResult();
     if (history.replaceState) history.replaceState(null, '', location.pathname + location.search);
   }
@@ -678,7 +709,7 @@
     var notesSection;
     if (notes.length) {
       notesSection = el('section', { class: 'notes-section' }, [
-        el('h3', null, [notes.length > 1 ? 'Notes (' + notes.length + ')' : 'Notes', el('span', { class: 'ai-badge', text: 'ℹ️ AI-gathered notes' })]),
+        el('h3', null, [notes.length > 1 ? 'Notes (' + notes.length + ')' : 'Notes', aiBadge()]),
         el('div', { class: 'ai-disclaimer', role: 'note' }, [
           'Notes compiled by an AI from scripture references — verify against the verses linked below.'
         ])
@@ -695,7 +726,7 @@
       el('div', { class: 'subtitle' }, [
         'Generation ' + (p.generation || '?') + ' · ' + genderLabel(p.gender),
         notes.length ? ' ' : null,
-        notes.length ? el('span', { class: 'ai-badge', text: 'ℹ️ AI-gathered notes' }) : null
+        notes.length ? aiBadge() : null
       ]),
       fields,
       notesSection
@@ -799,7 +830,7 @@
     if (!matches.length) {
       var term = els.search.value.trim();
       els.results.replaceChildren(el('li', { class: 'empty-state' }, [
-        el('span', { class: 'big', text: '🔍' }),
+        el('span', { class: 'big' }, [searchIcon()]),
         el('strong', { text: term ? 'No matches for “' + term + '”' : 'No one matches these filters' }),
         el('p', { text: 'Try a shorter name, or clear the filters to see everyone.' }),
         el('button', { class: 'btn', type: 'button', onclick: clearFilters, text: 'Clear search & filters' })
@@ -822,7 +853,7 @@
         }
       }, [
         el('div', { class: 'r-name' }, (nameHit ? highlighted(displayName(p), terms) : [displayName(p)])
-          .concat(hasNotes ? [el('span', { class: 'r-info', title: 'Has AI-gathered notes', text: ' ℹ️' })] : [])),
+          .concat(hasNotes ? [' ', el('span', { class: 'r-info', title: 'Has AI-gathered notes' }, [infoIcon()])] : [])),
         el('div', { class: 'r-meta', text: 'Gen ' + p.generation + ' · ' + genderMark(p.gender) + genderLabel(p.gender) + (age ? ' · age ' + age : '') }),
         reasonChips(m.reasons, terms)
       ])]);

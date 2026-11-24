@@ -135,13 +135,13 @@ test('spouse links exist, are mutual, and pair a female with a male', () => {
 
 test('demo data exercises remarriage, a childless couple, and multi-note people', () => {
   const idx = Family.buildIndex(people);
-  const fb = Family.deriveFamilyBlocks(idx);
+  const fb = Family.deriveUnions(idx);
   // Remarriage: someone with 2+ spouses who has children in 2+ of those unions.
   const remarried = people.filter((p) => p.spouses.length >= 2 &&
-    (fb.blocksOf.get(p.id) || []).filter((b) => b.mom && b.dad && b.children.length).length >= 2);
+    (fb.unionsOf.get(p.id) || []).filter((b) => b.mom && b.dad && b.children.length).length >= 2);
   assert(remarried.length >= 1, 'need at least one remarried person with children by two spouses');
-  assert(fb.blocks.some((b) => b.mom && b.dad && b.children.length === 0), 'need a married couple with no children');
-  assert(fb.blocks.some((b) => !(b.mom && b.dad) && b.children.length), 'need a single-parent family');
+  assert(fb.unions.some((b) => b.mom && b.dad && b.children.length === 0), 'need a married couple with no children');
+  assert(fb.unions.some((b) => !(b.mom && b.dad) && b.children.length), 'need a single-parent family');
   assert(people.filter((p) => p.notes.length >= 2).length >= 3, 'need at least three people with 2+ notes');
 });
 
@@ -220,7 +220,7 @@ test('validate enforces spouse symmetry, existence, and gender pairing', () => {
   assert.deepStrictEqual(idx.spousesOf.get('w'), ['h']);
 });
 
-test('family blocks: couple, single parent, childless couple, remarriage', () => {
+test('unions: couple, single parent, childless couple, remarriage', () => {
   const P = (id, gender, extra) => Object.assign({ id, name: id, gender, generation: 1, mom: null, dad: null, spouses: [], notes: [] }, extra);
   const people = [
     P('dad', 'male', { spouses: ['wife1', 'wife2'] }),
@@ -234,48 +234,78 @@ test('family blocks: couple, single parent, childless couple, remarriage', () =>
     P('g1', 'male', { generation: 3, mom: 'k4', dad: null })
   ];
   const idx = Family.buildIndex(people);
-  const fb = Family.deriveFamilyBlocks(idx);
-  const view = fb.blocks.map((b) => `${b.mom}+${b.dad}:${b.children.join(',')}`);
+  const fb = Family.deriveUnions(idx);
+  const view = fb.unions.map((b) => `${b.mom}+${b.dad}:${b.children.join(',')}`);
   assert.deepStrictEqual(view, [
     'wife1+dad:k1,k2', // spousal unions first, in the order dad lists them...
     'wife2+dad:k3',
-    'bride+k3:', //       ...a married couple with no children still gets a block
-    'wife2+null:k4', //   wife2 also had a child with no recorded father: her own single-parent block
+    'bride+k3:', //       ...a married couple with no children is still a union (junction, no child lines)
+    'wife2+null:k4', //   wife2 also had a child with no recorded father: her own single-parent union
     'k4+null:g1' //       single parent
   ]);
-  // The remarried father is in two blocks, always in the dad (right) slot.
-  assert.deepStrictEqual(fb.blocksOf.get('dad').map((b) => b.key), ['wife1|dad', 'wife2|dad']);
-  assert(fb.blocksOf.get('dad').every((b) => b.dad === 'dad'));
-  assert.deepStrictEqual(fb.blocksOf.get('wife2').map((b) => b.key), ['wife2|dad', 'wife2|']);
-  // Each child descends from exactly one block.
+  // The remarried father is in two unions (two junctions), always in the dad (right) slot.
+  assert.deepStrictEqual(fb.unionsOf.get('dad').map((b) => b.key), ['wife1|dad', 'wife2|dad']);
+  assert(fb.unionsOf.get('dad').every((b) => b.dad === 'dad'));
+  assert.deepStrictEqual(fb.unionsOf.get('wife2').map((b) => b.key), ['wife2|dad', 'wife2|']);
+  // Each child descends from exactly one union (one junction).
   for (const p of people) {
-    const owners = fb.blocks.filter((b) => b.children.includes(p.id));
-    assert.strictEqual(owners.length, p.mom || p.dad ? 1 : 0, `${p.id} should hang from exactly one block`);
+    const owners = fb.unions.filter((b) => b.children.includes(p.id));
+    assert.strictEqual(owners.length, p.mom || p.dad ? 1 : 0, `${p.id} should hang from exactly one union`);
   }
   // Excluding a parent (e.g. no usable generation) turns them into "unrecorded".
-  const noDad = Family.deriveFamilyBlocks(idx, (id) => id !== 'dad');
+  const noDad = Family.deriveUnions(idx, (id) => id !== 'dad');
   assert(noDad.byKey.has('wife1|') && noDad.byKey.get('wife1|').children.join() === 'k1,k2');
-  assert(!noDad.blocksOf.has('dad'));
+  assert(!noDad.unionsOf.has('dad'));
 });
 
-test('family blocks over the real data: mom is female, dad is male, every child has one block', () => {
+test('unions over the real data: mom is female, dad is male, every child has one union', () => {
   const idx = Family.buildIndex(people);
-  const fb = Family.deriveFamilyBlocks(idx);
-  for (const b of fb.blocks) {
+  const fb = Family.deriveUnions(idx);
+  for (const b of fb.unions) {
     if (b.mom) assert.strictEqual(idx.byId.get(b.mom).gender, 'female', `${b.key}: mom slot holds a non-female`);
     if (b.dad) assert.strictEqual(idx.byId.get(b.dad).gender, 'male', `${b.key}: dad slot holds a non-male`);
   }
   for (const p of people) {
-    const n = fb.blocks.filter((b) => b.children.includes(p.id)).length;
-    assert.strictEqual(n, p.mom || p.dad ? 1 : 0, `${p.id} hangs from ${n} blocks`);
+    const n = fb.unions.filter((b) => b.children.includes(p.id)).length;
+    assert.strictEqual(n, p.mom || p.dad ? 1 : 0, `${p.id} hangs from ${n} unions`);
   }
-  // Every recorded marriage shows up as a block.
+  // Every recorded marriage shows up as a union.
   for (const p of people) {
     for (const sid of p.spouses) {
       const [mom, dad] = p.gender === 'female' ? [p.id, sid] : [sid, p.id];
-      assert(fb.byKey.has(`${mom}|${dad}`), `marriage ${p.id}+${sid} has no family block`);
+      assert(fb.byKey.has(`${mom}|${dad}`), `marriage ${p.id}+${sid} has no union`);
     }
   }
+});
+
+test('junction geometry: gender-tagged parent lines meet one pill, children fan out from it', () => {
+  const opts = { drop: 50, pillW: 14, pillH: 30 };
+  // Couple with four kids (the reference drawing): mom left, dad right.
+  const g = Family.junctionGeometry(
+    { mom: { x: 100, y: 62 }, dad: { x: 400, y: 62 } },
+    [{ id: 'a', x: 0, y: 212 }, { id: 'b', x: 150, y: 212 }, { id: 'c', x: 350, y: 212 }, { id: 'd', x: 500, y: 212 }],
+    opts);
+  assert.deepStrictEqual(g.junction, { x: 243, y: 112, w: 14, h: 30, cx: 250 }, 'pill sits midway between the parents, below them');
+  assert.deepStrictEqual(g.lines.map((l) => l.kind), ['mom', 'dad', 'child', 'child', 'child', 'child']);
+  const mom = g.lines[0], dad = g.lines[1];
+  assert.deepStrictEqual([mom.x1, mom.y1, dad.x1, dad.y1], [100, 62, 400, 62], 'parent lines start at the bottom of each card');
+  assert(mom.x2 === 250 && dad.x2 === 250 && mom.y2 === dad.y2, 'both parent lines end at the same point on the pill');
+  const kids = g.lines.filter((l) => l.kind === 'child');
+  assert(kids.every((l) => l.x1 === 250 && l.y1 === kids[0].y1 && l.y1 > mom.y2), 'every child line leaves the same pill, from below the parent lines');
+  assert.deepStrictEqual(kids.map((l) => [l.id, l.x2, l.y2]), [['a', 0, 212], ['b', 150, 212], ['c', 350, 212], ['d', 500, 212]]);
+
+  // Single parent: the pill sits straight below them, with one coloured line.
+  const single = Family.junctionGeometry({ mom: null, dad: { x: 90, y: 62 } }, [{ id: 'k', x: 90, y: 212 }], opts);
+  assert.strictEqual(single.junction.cx, 90);
+  assert.deepStrictEqual(single.lines.map((l) => l.kind), ['dad', 'child']);
+
+  // Childless couple: the pill (the marriage) stays, but no child lines.
+  const childless = Family.junctionGeometry({ mom: { x: 90, y: 62 }, dad: { x: 314, y: 62 } }, [], opts);
+  assert(childless.junction, 'a married couple without children still gets a junction');
+  assert.deepStrictEqual(childless.lines.map((l) => l.kind), ['mom', 'dad']);
+
+  // No placeable parent: nothing to draw.
+  assert.strictEqual(Family.junctionGeometry({ mom: null, dad: null }, [], opts), null);
 });
 
 test('search finds parents by a kid\'s name, kids by a parent\'s name, and says why', () => {
