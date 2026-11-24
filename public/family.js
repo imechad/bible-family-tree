@@ -151,11 +151,32 @@
       siblingsOf.set(p.id, Array.from(seen, function (e) { return { id: e[0], kind: e[1] }; }));
     });
 
-    return { byId: byId, childrenOf: childrenOf, siblingsOf: siblingsOf, spousesOf: spousesOf, problems: problems };
+    // Lowercased display name -> person, for the filter builder's name lookups
+    // ("children includes Briar" resolves the name to a person first). First
+    // occurrence wins if two people share a name.
+    var byName = new Map();
+    byId.forEach(function (p) {
+      // Synthetic test fixtures may lack a name — skip them.
+      if (typeof p.name !== 'string' || !p.name) return;
+      var key = p.name.toLowerCase();
+      if (!byName.has(key)) byName.set(key, p);
+    });
+    return { byId: byId, byName: byName, childrenOf: childrenOf, siblingsOf: siblingsOf, spousesOf: spousesOf, problems: problems };
   }
 
   function isPositiveInt(n) {
     return typeof n === 'number' && Number.isInteger(n) && n > 0;
+  }
+
+  /** A generation is a positive integer, or "unknown" when scripture doesn't
+   *  place the person (they're drawn in a trailing "Gen ?" band). */
+  function isValidGeneration(g) {
+    return isPositiveInt(g) || g === 'unknown';
+  }
+
+  /** Sort key: numbered generations in order, unknown after all of them. */
+  function generationRank(g) {
+    return isPositiveInt(g) ? g : Infinity;
   }
 
   /**
@@ -170,7 +191,7 @@
       var who = '"' + p.id + '"';
       if (typeof p.name !== 'string' || !p.name.trim()) problems.push(who + ' has no name');
       if (p.gender !== 'male' && p.gender !== 'female' && p.gender !== 'unknown') problems.push(who + ' gender must be "male", "female", or "unknown"');
-      if (!isPositiveInt(p.generation)) problems.push(who + ' generation must be a positive integer');
+      if (!isValidGeneration(p.generation)) problems.push(who + ' generation must be a positive integer or "unknown"');
       if (p.age !== null && p.age !== undefined && p.age !== "unknown" && !(typeof p.age === 'number' && isFinite(p.age) && p.age >= 0)) {
         problems.push(who + ' age must be a non-negative number, "unknown", or null');
       }
@@ -556,8 +577,184 @@
 
     // Stable within a rank: by generation, then data order (= birth order).
     return out.sort(function (a, b) {
-      return a.rank - b.rank || (a.person.generation - b.person.generation) ||
+      var ga = generationRank(a.person.generation), gb = generationRank(b.person.generation);
+      return a.rank - b.rank || (ga === gb ? 0 : ga - gb) ||
         order.get(a.person.id) - order.get(b.person.id);
+    });
+  }
+
+
+  // ---------------------------------------------------------------- filter builder
+
+  /*
+   * Each row is { field, operator, value, value2 }. Field ids and operator ids
+   * (the owner's spec; fields without modes ignore `operator`):
+   *   name                      — contains over the person's name
+   *   generation, age           — 'is' | 'between' | 'isUnknown'
+   *   gender                    — value 'male' | 'female' | 'unknown' ('' = any)
+   *   mom, dad                  — contains over the parent's name
+   *   child, sibling, spouse    — 'amount' | 'amountRange' | 'name'
+   *   notes                     — 'hasNote' | 'noNote' | 'noteContains'
+   * Blank text / blank exact numbers make a row inert (matches everyone);
+   * junk in an exact number box matches no one; a blank or junk range side is
+   * unbounded. Bounds are inclusive and applied as typed (never swapped).
+   */
+
+  function personName(p) { return p && typeof p.name === 'string' && p.name.trim() ? p.name : (p && p.id) || ''; }
+
+  function queryOf(v) { return v === null || v === undefined ? '' : String(v).trim().toLowerCase(); }
+
+  function containsQuery(text, q) { return String(text || '').toLowerCase().indexOf(q) !== -1; }
+
+  function isBlank(v) { return v === null || v === undefined || String(v).trim() === ''; }
+
+  function isUnknownValue(v) { return v === 'unknown' || v === null || v === undefined; }
+
+  /** Exact numeric test for an 'is' / 'amount' box: blank -> inert (null),
+   *  junk -> matches nothing, otherwise strict equality. */
+  function exactNumber(actual, v) {
+    if (isBlank(v)) return true;
+    var n = Number(String(v).trim());
+    if (!isFinite(n)) return false;
+    return typeof actual === 'number' && actual === n;
+  }
+
+  /** Inclusive range for 'between' / 'amountRange'; blank/junk side = unbounded. */
+  function inRange(actual, lo, hi) {
+    if (typeof actual !== 'number' || !isFinite(actual)) return false;
+    var a = bound(lo), b = bound(hi);
+    if (a === null && b === null) return true;
+    if (a !== null && actual < a) return false;
+    if (b !== null && actual > b) return false;
+    return true;
+  }
+
+  var LIST_INDEX = { child: 'childrenOf', sibling: 'siblingsOf', spouse: 'spousesOf' };
+
+  function matchName(person, value) {
+    var q = queryOf(value);
+    return !q || containsQuery(personName(person), q);
+  }
+
+  function matchGeneration(person, operator, value, value2) {
+    var gen = person.generation;
+    switch (operator) {
+      case 'is': return exactNumber(isPositiveInt(gen) ? gen : null, value);
+      case 'between':
+        if (bound(value) === null && bound(value2) === null) return true;
+        return isPositiveInt(gen) && inRange(gen, value, value2);
+      case 'isUnknown': return gen === 'unknown';
+      default: return true;
+    }
+  }
+
+  function matchGender(person, value) {
+    if (isBlank(value)) return true;
+    return (person.gender || 'unknown') === value;
+  }
+
+  function matchAge(person, operator, value, value2) {
+    var age = person.age;
+    switch (operator) {
+      case 'is': return exactNumber(age, value);
+      case 'between':
+        // Both sides blank = inert, so a fresh range row doesn't hide anyone.
+        if (bound(value) === null && bound(value2) === null) return true;
+        return inRange(age, value, value2);
+      case 'isUnknown': return isUnknownValue(age);
+      default: return true;
+    }
+  }
+
+  function matchParent(person, index, role, value) {
+    var q = queryOf(value);
+    if (!q) return true;
+    var id = person[role];
+    if (typeof id !== 'string' || id === 'unknown' || id === 'none') return false;
+    var parent = index.byId.get(id);
+    return !!parent && containsQuery(personName(parent), q);
+  }
+
+  function matchList(person, index, field, operator, value, value2) {
+    var ids = index[LIST_INDEX[field]].get(person.id) || [];
+    switch (operator) {
+      case 'amount': return exactNumber(ids.length, value);
+      case 'amountRange': return inRange(ids.length, value, value2);
+      case 'name':
+        var q = queryOf(value);
+        if (!q) return true;
+        return ids.some(function (entry) {
+          // siblingsOf holds { id, kind } entries; the other lists hold ids.
+          var other = index.byId.get(entry && typeof entry === 'object' ? entry.id : entry);
+          return !!other && containsQuery(personName(other), q);
+        });
+      default: return true;
+    }
+  }
+
+  function matchNotes(person, operator, value) {
+    switch (operator) {
+      case 'hasNote': return noteViews(person).length > 0;
+      case 'noNote': return noteViews(person).length === 0;
+      case 'noteContains':
+        var q = queryOf(value);
+        if (!q) return true;
+        var raw = person && Array.isArray(person.notes) ? person.notes : [];
+        return raw.some(function (n) { return n && typeof n.text === 'string' && containsQuery(n.text, q); });
+      default: return true;
+    }
+  }
+
+  /** One row against one person. Unknown fields/operators match everyone. */
+  function matchRow(person, index, row) {
+    if (!row || !row.field) return true;
+    switch (row.field) {
+      case 'name': return matchName(person, row.value);
+      case 'generation': return matchGeneration(person, row.operator, row.value, row.value2);
+      case 'gender': return matchGender(person, row.value);
+      case 'age': return matchAge(person, row.operator, row.value, row.value2);
+      case 'mom':
+      case 'dad': return matchParent(person, index, row.field, row.value);
+      case 'child':
+      case 'sibling':
+      case 'spouse': return matchList(person, index, row.field, row.operator, row.value, row.value2);
+      case 'notes': return matchNotes(person, row.operator, row.value);
+      default: return true;
+    }
+  }
+
+  /** True when a row narrows the list at all (drives the badge). Mirrors the
+   *  inert rules above: blank boxes don't count, value-less modes always do. */
+  function rowIsActive(row) {
+    if (!row || !row.field) return false;
+    switch (row.field) {
+      case 'generation':
+      case 'age':
+        if (row.operator === 'isUnknown') return true;
+        if (row.operator === 'between') return bound(row.value) !== null || bound(row.value2) !== null;
+        return row.operator === 'is' && !isBlank(row.value);
+      case 'child':
+      case 'sibling':
+      case 'spouse':
+        if (row.operator === 'amountRange') return bound(row.value) !== null || bound(row.value2) !== null;
+        return (row.operator === 'amount' || row.operator === 'name') && !isBlank(row.value);
+      case 'notes':
+        if (row.operator === 'hasNote' || row.operator === 'noNote') return true;
+        return row.operator === 'noteContains' && !isBlank(row.value);
+      case 'name':
+      case 'gender':
+      case 'mom':
+      case 'dad':
+        return !isBlank(row.value);
+      default: return false;
+    }
+  }
+
+  /** Filter by multiple condition rows. Each row must match (AND). */
+  function filterByRows(people, index, rows) {
+    if (!rows || rows.length === 0) return people;
+    return people.filter(function (person) {
+      return rows.every(function (row) { return matchRow(person, index, row); });
     });
   }
 
@@ -632,6 +829,10 @@
     emptyFilters: emptyFilters,
     activeFilterCount: activeFilterCount,
     matchesFilters: matchesFilters,
+    filterByRows: filterByRows,
+    rowIsActive: rowIsActive,
+    isValidGeneration: isValidGeneration,
+    generationRank: generationRank,
     filterSearch: filterSearch
   };
 });

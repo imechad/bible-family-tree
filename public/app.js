@@ -24,15 +24,6 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var els = {
-    search: $('search'),
-    genSel: $('filter-gen'),
-    genderSel: $('filter-gender'),
-    clear: $('clear-filters'),
-    ageMin: $('filter-age-min'),
-    ageMax: $('filter-age-max'),
-    hasNotes: $('filter-has-notes'),
-    hasChildren: $('filter-has-children'),
-    hasSpouse: $('filter-has-spouse'),
     filtersBtn: $('filters-btn'),
     filtersBadge: $('filters-badge'),
     filterPanel: $('filter-panel'),
@@ -40,6 +31,9 @@
     filterClose: $('filter-close'),
     filterReset: $('filter-reset'),
     filterCount: $('filter-count'),
+    filterRows: $('filter-rows'),
+    addFilterRow: $('add-filter-row'),
+    clearFilters: $('clear-filters'),
     warning: $('data-warning'),
     resultsPane: $('results-pane'),
     results: $('results'),
@@ -135,6 +129,7 @@
       ['rect', { x: 10.85, y: 10.4, width: 2.3, height: 7.4, rx: 1.15, fill: 'currentColor' }]
     ]);
   }
+  // Used by the results list's "no one matches" empty state.
   function searchIcon() {
     return icon('search', [
       ['circle', { cx: 10.5, cy: 10.5, r: 6.5, fill: 'none', stroke: 'currentColor', 'stroke-width': 2 }],
@@ -182,9 +177,10 @@
     var index = F.buildIndex(raw);
     var problems = F.validate(raw, index);
     state.index = index;
-    // Anyone without a usable generation can't be placed on a row; they're
-    // reported in the warning instead of breaking the whole page.
-    state.people = Array.from(index.byId.values()).filter(function (p) { return F.isPositiveInt(p.generation); });
+    // Everyone stays in the app: an "unknown" (or otherwise unusable)
+    // generation is drawn in a trailing "Gen ?" band rather than dropped;
+    // bad values are still reported in the warning.
+    state.people = Array.from(index.byId.values());
 
     renderWarning(problems);
 
@@ -194,7 +190,6 @@
     }
     els.status.hidden = true;
 
-    fillGenerationFilter();
     state.layout = computeLayout(state.people);
     renderTree();
     applyFilters();
@@ -216,13 +211,7 @@
     );
   }
 
-  function fillGenerationFilter() {
-    var gens = Array.from(new Set(state.people.map(function (p) { return p.generation; }))).sort(function (a, b) { return a - b; });
-    var keep = els.genSel.value;
-    els.genSel.replaceChildren(el('option', { value: '', text: 'All generations' }));
-    gens.forEach(function (g) { els.genSel.appendChild(el('option', { value: String(g), text: 'Generation ' + g })); });
-    if (gens.indexOf(Number(keep)) !== -1) els.genSel.value = keep;
-  }
+
 
   // ---------------------------------------------------------------- layout
 
@@ -237,6 +226,13 @@
    * pushed right; that keeps this a single cheap pass, which matters once
    * the data holds hundreds of people.
    */
+  /** The row a generation value lands on: its number, or 'unknown' for
+   *  anything that isn't a positive integer, so nothing NaNs out when rows
+   *  are sorted (F.generationRank puts 'unknown' last). */
+  function rowGen(g) { return F.isPositiveInt(g) ? g : 'unknown'; }
+
+  function genText(g) { return F.isPositiveInt(g) ? String(g) : '?'; }
+
   function computeLayout(people) {
     var idx = state.index;
     var order = new Map(people.map(function (p, i) { return [p.id, i]; }));
@@ -256,7 +252,9 @@
       un.members = [un.mom, un.dad].filter(Boolean);
       // A union sits on its later parent's row: children are always in a
       // later generation than BOTH parents, so they stay below it.
-      un.gen = Math.max.apply(null, un.members.map(function (id) { return idx.byId.get(id).generation; }));
+      // A married-in partner of unknown generation rides on the known one's row.
+      var memberGens = un.members.map(function (id) { return idx.byId.get(id).generation; }).filter(F.isPositiveInt);
+      un.gen = memberGens.length ? Math.max.apply(null, memberGens) : 'unknown';
       un.width = un.members.length * NODE_W + (un.members.length - 1) * COUPLE_GAP;
       // Hang the union under the parents of whichever member has them (the
       // "blood" relative); a married-in spouse rides along.
@@ -273,11 +271,15 @@
     });
     people.forEach(function (p) {
       if (fu.unionsOf.has(p.id)) return;
-      units.push({ id: p.id, gen: p.generation, width: NODE_W, anchorPerson: p.id,
+      units.push({ id: p.id, gen: rowGen(p.generation), width: NODE_W, anchorPerson: p.id,
         anchorUnion: parentUnion(p.id), sub: 0, first: order.get(p.id) });
     });
 
-    var gens = Array.from(new Set(people.map(function (p) { return p.generation; }))).sort(function (a, b) { return a - b; });
+    // Numbered generations top to bottom, then the unknown band last.
+    var gens = Array.from(new Set(units.map(function (u) { return u.gen; }))).sort(function (a, b) {
+      var ra = F.generationRank(a), rb = F.generationRank(b);
+      return ra === rb ? 0 : ra - rb;
+    });
     var rowY = new Map();
     var instances = new Map();
     function addInstance(id, inst) {
@@ -388,7 +390,7 @@
     L.gens.forEach(function (g) {
       var y = L.rowY.get(g);
       if (y > MARGIN) els.nodes.appendChild(el('div', { class: 'gen-band', style: 'top:' + (y - ROW_GAP / 2 + 26) + 'px' }));
-      els.nodes.appendChild(el('div', { class: 'gen-label', style: 'top:' + y + 'px;height:' + NODE_H + 'px', text: 'Gen ' + g }));
+      els.nodes.appendChild(el('div', { class: 'gen-label', style: 'top:' + y + 'px;height:' + NODE_H + 'px', text: 'Gen ' + genText(g) }));
     });
 
     function svg(tag, attrs) {
@@ -458,7 +460,7 @@
           class: 'node ' + (female ? 'female' : p.gender === 'male' ? 'male' : 'unknown'),
           style: 'left:' + inst.x + 'px;top:' + inst.y + 'px;width:' + NODE_W + 'px;height:' + NODE_H + 'px',
           'data-id': p.id,
-          'aria-label': displayName(p) + ', ' + genderLabel(p.gender) + ', generation ' + p.generation + role(inst) +
+          'aria-label': displayName(p) + ', ' + genderLabel(p.gender) + ', generation ' + (F.isPositiveInt(p.generation) ? p.generation : 'unknown') + role(inst) +
             (list.length > 1 ? ', shown ' + list.length + ' times (one per marriage)' : '') +
             (notesCount ? ', has AI-gathered notes' : ''),
           onclick: function () { select(p.id, { scroll: false, instance: i }); }
@@ -710,7 +712,7 @@
     };
 
     var fields = el('dl', { class: 'fields' }, [
-      el('dt', { text: 'Generation' }), el('dd', { text: F.isPositiveInt(p.generation) ? String(p.generation) : p.generation === "unknown" ? el('span', { class: 'none dashed', text: 'Unknown' }) : '?' }),
+      el('dt', { text: 'Generation' }), el('dd', null, [F.isPositiveInt(p.generation) ? String(p.generation) : p.generation === "unknown" ? el('span', { class: 'none dashed', text: 'Unknown' }) : '?']),
       el('dt', { text: 'Gender' }), el('dd', { text: p.gender === "unknown" ? el('span', { class: 'none dashed', text: 'Unknown' }) : genderLabel(p.gender) }),
       el('dt', { text: 'Age' }), el('dd', null, [p.age === "unknown" ? el('span', { class: 'none dashed', text: 'Unknown' }) : typeof p.age === 'number' ? p.age + ' years' : el('span', { class: 'none', text: 'Not recorded' })]),
       el('dt', { text: 'Mom' }), el('dd', null, [parentLink(p.mom)]),
@@ -738,7 +740,7 @@
     els.detailBody.replaceChildren(
       el('h2', { text: displayName(p) }),
       el('div', { class: 'subtitle' }, [
-        'Generation ' + (p.generation || '?') + ' · ' + genderLabel(p.gender),
+        'Generation ' + genText(p.generation) + ' · ' + genderLabel(p.gender),
         notes.length ? ' ' : null,
         notes.length ? aiBadge() : null
       ]),
@@ -778,42 +780,228 @@
     if (e.key !== 'Escape') return;
     // The filter panel sits on top, so Escape closes it first.
     if (!els.filterPanel.hidden) { closeFilterPanel(true); return; }
-    if (!els.detail.hidden && document.activeElement !== els.search) closeDetail();
+    if (!els.detail.hidden) closeDetail();
   });
 
   // ---------------------------------------------------------------- search & filters
 
-  /** The filter panel's controls as a plain object (see Family.matchesFilters),
-   *  so the filtering rules live in family.js where the tests can reach them. */
-  function readFilters() {
-    return {
-      gen: els.genSel.value,
-      gender: els.genderSel.value,
-      ageMin: els.ageMin.value,
-      ageMax: els.ageMax.value,
-      hasNotes: els.hasNotes.checked,
-      hasChildren: els.hasChildren.checked,
-      hasSpouse: els.hasSpouse.checked
+  // Filter builder state: [{ field, operator, value, value2 }], ANDed by
+  // F.filterByRows. Fields without modes keep operator null.
+  var filterRows = [];
+
+  const numberOps = [
+    { id: 'is', label: 'is', valueType: 'number' },
+    { id: 'between', label: 'is between', valueType: 'range' },
+    { id: 'isUnknown', label: 'is unknown', valueType: 'none' }
+  ];
+  const countOps = [
+    { id: 'amount', label: 'amount', valueType: 'count' },
+    { id: 'amountRange', label: 'amount range', valueType: 'countRange' },
+    { id: 'name', label: 'name', valueType: 'text' }
+  ];
+
+  // Field dropdown, in the owner's order. Labels are singular on purpose.
+  // `control` = the single control for a field with no operator dropdown.
+  const fieldDefinitions = {
+    name: { label: 'Name', control: 'text', placeholder: 'Name contains…' },
+    generation: { label: 'Generation', operators: numberOps },
+    gender: { label: 'Gender', control: 'gender' },
+    age: { label: 'Age', operators: numberOps },
+    mom: { label: 'Mom', control: 'text', placeholder: 'Mom’s name contains…' },
+    dad: { label: 'Dad', control: 'text', placeholder: 'Dad’s name contains…' },
+    child: { label: 'Child', operators: countOps, noun: 'child' },
+    sibling: { label: 'Sibling', operators: countOps, noun: 'sibling' },
+    spouse: { label: 'Spouse', operators: countOps, noun: 'spouse' },
+    notes: {
+      label: 'Notes',
+      operators: [
+        { id: 'hasNote', label: 'has note', valueType: 'none' },
+        { id: 'noNote', label: 'no note', valueType: 'none' },
+        { id: 'noteContains', label: 'note contains', valueType: 'text' }
+      ]
+    }
+  };
+
+  function valueTypeOf(row) {
+    const def = fieldDefinitions[row.field];
+    if (def.control) return def.control;
+    const op = def.operators.find(o => o.id === row.operator) || def.operators[0];
+    return op.valueType;
+  }
+
+  // Text boxes and number boxes can't share a value: "Ab" typed as a name
+  // would silently match no one once the box became an amount box.
+  const valueKind = t => (t === 'text' ? 'text' : t === 'none' || t === 'gender' ? t : 'number');
+
+  function setRowField(row, fieldId) {
+    const def = fieldDefinitions[fieldId];
+    row.field = fieldId;
+    row.operator = def.operators ? def.operators[0].id : null;
+    row.value = '';
+    row.value2 = '';
+  }
+
+  function setRowOperator(row, operatorId) {
+    const before = valueTypeOf(row);
+    row.operator = operatorId;
+    const after = valueTypeOf(row);
+    if (valueKind(before) !== valueKind(after)) row.value = '';
+    if (after !== 'range' && after !== 'countRange') row.value2 = '';
+  }
+
+  /** A value box that re-filters on every keystroke. */
+  function valueInput(row, key, attrs) {
+    return el('input', Object.assign({
+      class: 'filter-value',
+      value: row[key] || '',
+      oninput: function (e) { row[key] = e.target.value; applyFilters(); }
+    }, attrs));
+  }
+
+  function rangeInputs(row, attrs, labels) {
+    return el('div', { class: 'filter-range' }, [
+      valueInput(row, 'value', Object.assign({ placeholder: 'min', 'aria-label': labels[0] }, attrs)),
+      el('span', { class: 'filter-range-sep', text: 'and' }),
+      valueInput(row, 'value2', Object.assign({ placeholder: 'max', 'aria-label': labels[1] }, attrs))
+    ]);
+  }
+
+  function valueControl(row) {
+    const def = fieldDefinitions[row.field];
+    const what = def.label.toLowerCase();
+    // Generation/age are free text boxes (junk in "is" matches no one);
+    // child/sibling/spouse counts are number boxes.
+    const numText = { type: 'text', inputmode: 'numeric', autocomplete: 'off' };
+    const count = { type: 'number', inputmode: 'numeric', min: '0', step: '1' };
+    switch (valueTypeOf(row)) {
+      case 'text':
+        return valueInput(row, 'value', {
+          type: 'text', autocomplete: 'off', spellcheck: 'false',
+          placeholder: def.placeholder || (row.operator === 'name' ? def.noun + '’s name contains…' : 'contains…'),
+          'aria-label': def.placeholder ? def.label + ' contains' : def.label + ' text'
+        });
+      case 'number':
+        return valueInput(row, 'value', Object.assign({ placeholder: what, 'aria-label': def.label + ' is' }, numText));
+      case 'range':
+        return rangeInputs(row, numText, [def.label + ' from', def.label + ' to']);
+      case 'count':
+        return valueInput(row, 'value', Object.assign({ placeholder: 'how many', 'aria-label': 'Number of ' + what }, count));
+      case 'countRange':
+        return rangeInputs(row, count, ['Fewest ' + what, 'Most ' + what]);
+      case 'gender':
+        return el('select', {
+          class: 'filter-value',
+          'aria-label': 'Gender',
+          onchange: function (e) { row.value = e.target.value; applyFilters(); }
+        }, [['', 'any gender'], ['male', 'male'], ['female', 'female'], ['unknown', 'unknown']].map(function (o) {
+          return el('option', { value: o[0], selected: (row.value || '') === o[0], text: o[1] });
+        }));
+      default:
+        return null; // 'none': the mode itself is the whole condition
+    }
+  }
+
+  function createFilterRow(row) {
+    const def = fieldDefinitions[row.field];
+    const rowEl = el('div', { class: 'filter-row' + (def.operators ? ' has-op' : '') });
+    const rerender = function () {
+      const fresh = createFilterRow(row);
+      rowEl.replaceWith(fresh);
+      return fresh;
     };
+
+    const fieldSelect = el('select', {
+      class: 'filter-field',
+      'aria-label': 'Filter on',
+      onchange: function (e) {
+        setRowField(row, e.target.value);
+        const fresh = rerender();
+        fresh.querySelector('.filter-operator, .filter-value').focus({ preventScroll: true });
+        applyFilters();
+      }
+    }, Object.keys(fieldDefinitions).map(function (id) {
+      return el('option', { value: id, selected: id === row.field, text: fieldDefinitions[id].label });
+    }));
+
+    const operatorSelect = def.operators ? el('select', {
+      class: 'filter-operator',
+      'aria-label': def.label + ' condition',
+      onchange: function (e) {
+        setRowOperator(row, e.target.value);
+        const fresh = rerender();
+        const box = fresh.querySelector('.filter-value');
+        if (box) box.focus({ preventScroll: true });
+        applyFilters();
+      }
+    }, def.operators.map(function (op) {
+      return el('option', { value: op.id, selected: op.id === row.operator, text: op.label });
+    })) : null;
+
+    const control = valueControl(row);
+    rowEl.append(fieldSelect);
+    if (operatorSelect) rowEl.append(operatorSelect);
+    rowEl.append(el('div', { class: 'filter-value-container' + (control ? '' : ' empty') }, [control]));
+    rowEl.append(el('button', {
+      class: 'btn ghost filter-remove',
+      type: 'button',
+      'aria-label': 'Remove ' + def.label + ' filter',
+      title: 'Remove filter',
+      onclick: function () { removeFilterRow(row); },
+      text: '✕'
+    }));
+    return rowEl;
+  }
+
+  function addFilterRow() {
+    const row = { field: 'name', operator: null, value: '', value2: '' };
+    filterRows.push(row);
+    renderFilterRows();
+    const last = els.filterRows.lastElementChild;
+    if (last) last.querySelector('.filter-value').focus({ preventScroll: true });
+    applyFilters();
+  }
+
+  function removeFilterRow(row) {
+    filterRows = filterRows.filter(r => r !== row);
+    renderFilterRows();
+    applyFilters();
+  }
+
+  function renderFilterRows() {
+    els.filterRows.replaceChildren.apply(els.filterRows, filterRows.map(createFilterRow));
+  }
+
+  function clearFilterRows() {
+    filterRows = [];
+    renderFilterRows();
+    applyFilters();
+  }
+
+  /** Rows that actually narrow the list (a blank box is inert). */
+  function activeRowCount() {
+    return filterRows.filter(F.rowIsActive).length;
   }
 
   function filtersActive() {
-    return !!(els.search.value.trim() || F.activeFilterCount(readFilters()));
+    return activeRowCount() > 0;
   }
 
-  /** [{ person, reasons, rank }] for the search box (see Family.search),
-   *  ANDed with every filter in the panel. */
+  /** [{ person, reasons, rank }] for the results list: everyone passing
+   *  every filter row, in data order. */
   function currentMatches() {
-    return F.filterSearch(state.people, state.index, els.search.value, readFilters());
+    if (!state.index) return [];
+    return F.filterByRows(state.people, state.index, filterRows)
+      .map(person => ({ person, reasons: [], rank: 0 }));
   }
 
   function updateFilterBadge(matchCount) {
-    var n = F.activeFilterCount(readFilters());
+    var n = activeRowCount();
     els.filtersBadge.hidden = !n;
     els.filtersBadge.textContent = String(n);
     els.filtersBtn.classList.toggle('on', n > 0);
     els.filtersBtn.setAttribute('aria-label', n ? 'Filters, ' + n + ' active' : 'Filters');
-    els.filterReset.disabled = !n;
+    els.filterReset.disabled = !filterRows.length;
+    els.clearFilters.hidden = !filterRows.length;
     els.filterCount.textContent = matchCount + (matchCount === 1 ? ' person shown' : ' people shown');
   }
 
@@ -834,7 +1022,7 @@
     els.filterBackdrop.hidden = !narrowMQ.matches;
     els.filtersBtn.setAttribute('aria-expanded', 'true');
     positionFilterPanel();
-    els.genSel.focus({ preventScroll: true });
+    els.addFilterRow.focus({ preventScroll: true });
   }
 
   function closeFilterPanel(restoreFocus) {
@@ -875,9 +1063,8 @@
     var active = filtersActive();
     var matches = currentMatches();
     var matchSet = new Set(matches.map(function (m) { return m.person.id; }));
-    var terms = F.parseQuery(els.search.value).map(function (t) { return t.value; });
+    var terms = []; // search box removed — no query terms to highlight
 
-    els.clear.hidden = !active;
     els.resultsPane.classList.toggle('active', active);
     if (active) setResultsCollapsed(false);
 
@@ -894,12 +1081,12 @@
     updateFilterBadge(matches.length);
 
     if (!matches.length) {
-      var term = els.search.value.trim();
+      
       els.results.replaceChildren(el('li', { class: 'empty-state' }, [
         el('span', { class: 'big' }, [searchIcon()]),
-        el('strong', { text: term ? 'No matches for “' + term + '”' : 'No one matches these filters' }),
-        el('p', { text: 'Try a shorter name, or clear the filters to see everyone.' }),
-        el('button', { class: 'btn', type: 'button', onclick: clearFilters, text: 'Clear search & filters' })
+        el('strong', { text: 'No one matches these filters' }),
+        el('p', { text: 'Loosen or remove a filter, or clear them all to see everyone.' }),
+        el('button', { class: 'btn', type: 'button', onclick: clearFilterRows, text: 'Clear filters' })
       ]));
       return;
     }
@@ -920,7 +1107,7 @@
       }, [
         el('div', { class: 'r-name' }, (nameHit ? highlighted(displayName(p), terms) : [displayName(p)])
           .concat(hasNotes ? [' ', el('span', { class: 'r-info', title: 'Has AI-gathered notes' }, [infoIcon()])] : [])),
-        el('div', { class: 'r-meta', text: 'Gen ' + p.generation + ' · ' + genderMark(p.gender) + genderLabel(p.gender) + (age && p.age !== "unknown" ? ' · age ' + age : '') }),
+        el('div', { class: 'r-meta', text: 'Gen ' + genText(p.generation) + ' · ' + genderMark(p.gender) + genderLabel(p.gender) + (age && p.age !== "unknown" ? ' · age ' + age : '') }),
         reasonChips(m.reasons, terms)
       ])]);
     }));
@@ -940,35 +1127,11 @@
     els.resultsToggle.setAttribute('aria-expanded', String(!collapsed));
   }
 
-  /** The panel's "Clear filters": resets every panel control but leaves the
-   *  search text alone, since that has its own box (and ✕/Escape). */
-  function resetPanelFilters() {
-    var f = F.emptyFilters();
-    els.genSel.value = f.gen;
-    els.genderSel.value = f.gender;
-    els.ageMin.value = f.ageMin;
-    els.ageMax.value = f.ageMax;
-    els.hasNotes.checked = f.hasNotes;
-    els.hasChildren.checked = f.hasChildren;
-    els.hasSpouse.checked = f.hasSpouse;
-    applyFilters();
-  }
 
-  /** Top-bar "Clear" and the empty state's button: search AND filters. */
-  function clearFilters() {
-    els.search.value = '';
-    resetPanelFilters();
-  }
+  els.addFilterRow.addEventListener('click', addFilterRow);
+  els.filterReset.addEventListener('click', clearFilterRows);
+  els.clearFilters.addEventListener('click', clearFilterRows);
 
-  els.search.addEventListener('input', applyFilters);
-  // 'input' as well as 'change' so the count moves while the user is still
-  // typing an age or arrowing through a dropdown, not only on blur.
-  [els.genSel, els.genderSel, els.ageMin, els.ageMax, els.hasNotes, els.hasChildren, els.hasSpouse].forEach(function (c) {
-    c.addEventListener('input', applyFilters);
-    c.addEventListener('change', applyFilters);
-  });
-  els.clear.addEventListener('click', clearFilters);
-  els.filterReset.addEventListener('click', resetPanelFilters);
   els.filtersBtn.addEventListener('click', function () {
     if (els.filterPanel.hidden) openFilterPanel(); else closeFilterPanel(false);
   });
@@ -990,18 +1153,6 @@
   els.resultsToggle.addEventListener('click', function () {
     setResultsCollapsed(!els.resultsPane.classList.contains('collapsed'));
   });
-  els.search.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') {
-      var first = currentMatches()[0];
-      if (first) {
-        select(first.person.id, { scroll: true });
-        if (narrowMQ.matches) { setResultsCollapsed(true); els.search.blur(); }
-      }
-    } else if (e.key === 'Escape') {
-      clearFilters();
-    }
-  });
-
   window.addEventListener('hashchange', function () {
     var id = idFromHash();
     if (id && id !== state.selectedId) select(id, { scroll: true });

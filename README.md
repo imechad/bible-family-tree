@@ -2,14 +2,15 @@
 
 A self-hosted, single-page family tree explorer: a pannable/zoomable tree laid out in
 generation rows, where each couple's lines meet at a small junction and their children
-fan out below it, instant search by anything attached to a person
-(their name, kids, parents, spouses, siblings, notes), a Filters panel (generation, gender,
-age range, has notes / children / spouse),
+fan out below it, a build-your-own Filters panel where every field has its own controls
+(contains boxes for name/mom/dad, is / is between / is unknown for generation and age, a
+gender dropdown, amount or name for child/sibling/spouse, has / no / contains for notes),
 and a detail panel showing each person's relatives and scripture-cited, AI-gathered notes.
 
 > **⚠ Phase 1 — MOCK DATA.** `data/people.json` currently holds an invented demo family
-> (the "Vell" dynasty, 33 people over 7 generations, including a remarriage and a
-> childless couple). None of them are Bible characters.
+> (the "Vell" dynasty, 34 people over 7 generations plus one relative of unknown
+> generation, including a remarriage and a childless couple). None of them are Bible
+> characters.
 > The notes are made-up demo text; they cite real Genesis verses only so the verse links
 > can be clicked and checked. Real Bible characters arrive in phase 2, **by editing the
 > data file only**. No code changes needed.
@@ -39,12 +40,13 @@ node tests/data.test.js
 This checks data integrity: ids are unique, every mom/dad id exists and has the right
 gender and an earlier generation, every spouse id exists and the link is recorded on
 **both** people (female + male), derived children and siblings agree with the parent
-links, every note cites at least one valid reference, and generations are positive
-integers. It also unit-tests union derivation (couples, single parents, childless
-couples, remarriage), the junction geometry (pink/blue parent lines meet one pill, the
-children's lines fan out from it, a childless couple keeps the pill with no child lines), search (by a kid's name, comma lists, prefixes), the filter
-panel's logic (age range, has notes / children / spouse, all combined with each other and
-with search, and the badge count) and multi-note rendering, then boots the server on a free port and checks that `/api/people` returns the
+links, every note cites at least one valid reference, and generations are a positive
+integer or `"unknown"`. It also unit-tests union derivation (couples, single parents,
+childless couples, remarriage), the junction geometry (pink/blue parent lines meet one
+pill, the children's lines fan out from it, a childless couple keeps the pill with no
+child lines), and the filter builder's logic (every field's operators, blank-row
+inertness, AND-combined rows, and the badge count) and multi-note rendering, then boots
+the server on a free port and checks that `/api/people` returns the
 array and that a malformed file produces an error instead of a crash.
 **Run this after every data edit.** It tells you exactly which person and field is wrong.
 
@@ -70,54 +72,46 @@ array and that a malformed file produces an error instead of a crash.
   - A remarried person is drawn once in **each** union, with a small `⧉ 1/2` / `⧉ 2/2`
     marker. Each union has its own junction. Their own parents' line goes to the first
     copy, and both copies light up when selected.
+  - People whose generation is unknown ("unknown cousin" types) appear in a trailing
+    **? generation** band below the numbered rows, drawn as standalone cards.
   - Selecting someone highlights their unions: lines get thicker, child lines turn white
     with a gold edge, and the junction gets a gold ring. Parent lines keep their pink/blue colour.
     Pan by dragging with the mouse or swiping on touch. Zoom with the − / + buttons or
     Ctrl/⌘ + scroll.
-- **Search and filters:** search is instant and case- and accent-insensitive. It matches
-  **anything attached to a person**: their own name, generation, gender, age, their
-  mom's, dad's, kids', spouses' and siblings' names, and the text of their notes. Typing
-  a child's name brings up that child's parents (and typing a parent's name brings up
-  their children). Each result carries a chip saying *why* it matched, e.g.
-  `kid: Lisska Arlo`, `sibling: Lisska Arlo` or `notes: "…orchard on the hill…"`.
-  - **Lists:** `Lisska, Briar` shows everyone matching *any* of the names.
-  - **Prefixes** target one role: `kid:` (alias `child:`), `mom:`, `dad:`, `spouse:`
-    (`wife:`/`husband:`), `sibling:`, `gen:`, `gender:`, `age:`, plus `name:` and `notes:`.
-    `kid:Briar` returns Briar's parent. A prefix applies to the comma-separated values
-    that follow it until the next prefix: `kid:Briar, Wick` finds the parents of either.
-    `gen:` and `age:` take a number or a range (`age:60-70`). `gender:f` matches female.
-  - A bare number (e.g. `3`) matches generation or age only, not verse numbers in notes.
-    Relative and note matches must start a word (so `wick` doesn't pull in every relative
-    of *Fenwick*). Own-name matches are plain substrings as before, but ranked after
-    word-start hits.
-  - Results are ordered: own-name hits, then relatives, then generation/gender/age, then
-    notes, each by generation. Clicking a result (or pressing Enter for the first match)
-    jumps to that person, highlights them, and opens their details. Non-matching cards
-    are dimmed while a search is active.
-- **Filters:** the **Filters** button next to the search box opens a panel with:
-  - **Generation** and **Gender** dropdowns.
-  - **Age range**: min and max boxes, both inclusive. Leave either blank for no bound. When an
-    age bound is set, people whose age isn't recorded are left out. The bounds are used
-    exactly as typed, so a min above the max matches no one.
-  - Checkboxes: **Has notes**, **Has children**, **Has spouse(s)**. Children and spouses
-    come from the derived links, so a single parent counts as having children.
+- **Filters:** the **Filters** button opens a build-your-own panel. **Add filter** starts
+  a row; each row is one condition, and every row must match (rows combine with AND).
+  Each field decides its own controls:
+  - **Name** — a contains box, matched case-insensitively against anyone's name.
+  - **Generation** and **Age** — an operator dropdown with `is`, `is between` and
+    `is unknown`. `is` shows one box, `is between` shows two (inclusive range), and
+    `is unknown` shows no box at all and matches people whose value isn't recorded.
+  - **Gender** — a dropdown: male, female, or unknown.
+  - **Mom** / **Dad** — a contains box on the parent's name (mom references are female
+    people, dad references are male). A person whose mom/dad is unknown or none doesn't
+    match a typed name.
+  - **Child** / **Sibling** / **Spouse** — an operator dropdown with `amount`,
+    `amount range` and `name`. `amount` is one number box (exact count), `amount range`
+    is two number boxes (inclusive), `name` is a contains box on any one listed person's
+    name. Searching by name finds one person at a time — to look for several, add more rows.
+  - **Notes** — an operator dropdown with `has note`, `no note` and `note contains`; the
+    text box appears only for `note contains` and matches the note text.
 
-  All filters combine with each other (a person must pass every one) **and** with the text
-  search. They apply as you change them: the result count, the panel's "N people shown"
-  line, the results list and the dimming on the tree all update immediately. While any
-  filter is on, the button shows a gold count badge (the age range counts as one), so you can
-  see at a glance why the list is shorter. **Clear filters** in the panel resets every
-  filter but keeps your search text. The top-bar **Clear** button, and the one in the
-  "no matches" message, clear both. Close the panel with ✕, Escape, or a click outside it.
-  On desktop it drops down under the button. On phones it opens as a bottom sheet that
-  spans the screen width and scrolls inside itself.
+  A blank box never filters anything (the row just sits inert), so half-typed text never
+  empties the list. Everything applies as you type: the result count, the panel's
+  "N people shown" line, the results list and the dimming on the tree all update
+  immediately. While any filter is on, the button shows a gold count badge (one per
+  active row), so you can see at a glance why the list is shorter. **Clear filters** in
+  the panel resets every row, and the top-bar **Clear** button (and the one in the
+  "No one matches these filters" message) does the same. Close the panel with ✕, Escape,
+  or a click outside it. On desktop it drops down under the button. On phones it opens
+  as a bottom sheet that spans the screen width and scrolls inside itself.
 - **Detail panel:** shows Generation, Gender, Age, Mom, Dad, Spouses, Children and
   Siblings. Every relative is a clickable link. When someone has children by more than
   one partner, each child is tagged `(with <other parent>)`. Siblings are labelled `half · same mother` and so on when
   they share only one parent. On phones the panel becomes a bottom sheet.
 - **AI-gathered notes:** these are marked with a drawn info icon (an inline SVG circled
   "i", not an emoji, so it looks the same on every device). It appears on tree cards,
-  in search results and in the legend. In the detail panel it sits next to an
+  in the results list and in the legend. In the detail panel it sits next to an
   "AI-gathered notes" badge with a standing disclaimer. A person can have
   several notes. Each one renders as its own numbered entry ("Note 2 of 3") with its own
   commentary, its own quoted verses and its own source links. Quoted scripture is shown as
@@ -141,7 +135,7 @@ record reads correctly on its own, and the test checks that the two sides agree.
 | `id`         | string, unique                | Stable and never reused. Use kebab-case, e.g. `"seth"`, `"jacob-son-of-isaac"`. |
 | `name`       | string                        | Display name. |
 | `gender`     | `"male"` \| `"female"` \| `"unknown"` | `"unknown"` = the record doesn't say. |
-| `generation` | positive integer \| `"unknown"` | 1 = top row. A number must be greater than both parents' generations (when known). |
+| `generation` | positive integer \| `"unknown"` | 1 = top row. A number must be greater than both parents' generations (when known). `"unknown"` = can't be placed (shown in the ? generation band). |
 | `age`        | number \| `"unknown"`         | `"unknown"` if the record doesn't say. |
 | `mom`        | id \| `"unknown"` \| `"none"` | An id must be a `"female"` person (unknown-gender parents are allowed but the union can't draw a mom slot for them). `"unknown"` = not recorded. `"none"` = affirmatively no mother (first of their line). |
 | `dad`        | id \| `"unknown"` \| `"none"` | An id must be a `"male"` person. `"unknown"` = not recorded. `"none"` = affirmatively no father (first of their line). |
@@ -214,8 +208,8 @@ spouses are in different generations, their union sits on the later generation's
 ### Adding a person (phase 2 workflow)
 
 1. Append an object like the one above to the array in `data/people.json`.
-2. Set `mom` / `dad` to existing ids, or `null` when unknown. For a marriage, add each
-   spouse's id to the other's `spouses` list.
+2. Set `mom` / `dad` to existing ids, or `"unknown"`/`"none"` when there is no mother or
+   father to name. For a marriage, add each spouse's id to the other's `spouses` list.
 3. Run `node tests/data.test.js` and fix anything it reports.
 4. Refresh the browser.
 
@@ -227,8 +221,8 @@ data/people.json     ALL people: the only file to edit for new data
 public/index.html    page shell
 public/styles.css    dark, responsive theme (desktop + iPhone)
 public/family.js     shared logic: derive children/siblings/spouses and unions,
-                     junction geometry, validate, search + filter logic, note views, verse links
+                     junction geometry, validate, filter-builder logic, note views, verse links
                      (used by both the browser and the tests)
-public/app.js        union/junction tree layout and rendering, drawn SVG icons, search UI, filter panel, detail panel
+public/app.js        union/junction tree layout and rendering, drawn SVG icons, filter builder UI, detail panel
 tests/data.test.js   data integrity + server smoke tests (plain node)
 ```

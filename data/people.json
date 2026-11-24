@@ -694,7 +694,7 @@
     "id": "unknown-cousin",
     "name": "Unknown Cousin",
     "gender": "unknown",
-    "generation": 6,
+    "generation": "unknown",
     "age": "unknown",
     "mom": "unknown",
     "dad": "unknown",

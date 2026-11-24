@@ -1,0 +1,147 @@
+# FEATURE: rebuild the filter-builder rows so every field has exactly the owner-specified controls
+
+Repo: /home/imebored/bible-family-tree (mock-data family tree web app, dark theme, iPhone-friendly).
+Single feature pass. Do NOT git commit/push — the orchestrator reviews, verifies, and commits.
+Do NOT touch server.js or restructure the repo.
+
+## Test command (custom zero-dep harness — NOT node --test)
+
+    node tests/data.test.js
+
+All 31 currently pass. Your run must end with ALL green (expect more than 31 after you add tests).
+
+## Where things live (current state, v1.4.1 + uncommitted builder work)
+
+- public/app.js ~lines 764-1100: filter builder. `fieldDefinitions` (field -> operators -> valueType),
+  `createFilterRow`, `updateRowOperators`, `updateRowValueType`, `addFilterRow`, `removeFilterRow`,
+  `renderFilterRows`, `clearFilterRows`, `filtersActive`, `currentMatches` (calls `F.filterByRows`).
+  There is an `el()` DOM helper. Live updates flow through `applyFilters()` (already wired to the
+  results count + badge — keep using it).
+- public/family.js ~lines 575-721: `filterByRows(people, index, rows)` plus helpers
+  `matchName`, `matchGeneration`, `matchGender`, `matchAge`, `matchParent`, `matchList`, `matchNotes`.
+  `bound(v)` (blank/junk -> null = "no bound") already exists near line 732.
+  Index has: `byId`, `byName` (lowercased name -> person), `childrenOf`, `siblingsOf`, `spousesOf`.
+  `displayName(person)` exists; `noteViews(person)` returns notes that have text.
+- public/index.html: filter panel already has ids the tests assert on — DO NOT remove or rename:
+  filters-btn, filters-badge, filter-panel, filter-backdrop, filter-close, filter-reset,
+  filter-count, filter-rows, add-filter-row, clear-filters, results-count.
+- public/styles.css: row styling exists but is plain — see TASK C.
+- tests/data.test.js: custom harness (`const test = (name, fn) => tests.push(...)` run at bottom).
+- data/people.json: 34 mock people. mom/dad store a person ID, or the strings 'unknown'/'none'.
+  Ages are numbers or 'unknown'. One person `unknown-cousin` ("Unknown Cousin") already has
+  gender 'unknown', age 'unknown', mom 'unknown', dad 'unknown'.
+
+## THE SPEC — the owner specified exactly what each field's row looks like
+
+Field dropdown order (labels EXACTLY as written, singular on purpose — his call, do not pluralize):
+
+1. **Name** — NO operator dropdown. One text box. Simple case-insensitive "contains" over all people.
+2. **Generation** — operator dropdown [is | is between | is unknown].
+   - is -> ONE text box (numeric equality).
+   - is between -> TWO text boxes (inclusive numeric range).
+   - is unknown -> no value input at all.
+3. **Gender** — NO operator dropdown. One dropdown: [male | female | unknown] (plus a blank
+   "any gender" placeholder state that filters nothing).
+4. **Age** — operator dropdown [is | is between | is unknown].
+   - is -> ONE text box (numeric equality). is between -> TWO text boxes (inclusive range).
+   - is unknown -> no value input.
+5. **Mom** — NO operator dropdown. One text box: contains-match on the person's mom's NAME.
+   (Mom references are already validated to be female people, so this is a contains search
+   through the female people — that's the owner's wording.)
+6. **Dad** — same as Mom but dad references are male people.
+7. **Child** — operator dropdown [amount | amount range | name].
+   - amount -> ONE number box (exact child count).
+   - amount range -> TWO number boxes (inclusive count range).
+   - name -> ONE text box: contains-match on any child's name.
+8. **Sibling** — same three modes as Child (over index.siblingsOf).
+9. **Spouse** — same three modes as Child (over index.spousesOf).
+10. **Notes** — operator dropdown [has note | no note | note contains].
+    - has note / no note -> no value input.
+    - note contains -> ONE text box: contains-match over note text (case-insensitive).
+
+Row shape: [field select] [operator select — ONLY for fields that have modes] [value area] [✕ remove].
+Fields WITHOUT an operator dropdown render their single control directly: Name, Gender, Mom, Dad.
+A brand-new row defaults to Name with an empty text box.
+
+## Matching semantics — nail these exactly, they were chosen deliberately
+
+- Blank text in ANY contains box (name, mom, dad, child/sibling/spouse name, note contains):
+  the row is INERT (matches everyone) — same rule the current matchName already uses.
+- Blank number in an "is"/"amount" box: row inert. Non-numeric junk in "is"/"amount": matches NOTHING.
+- Range boxes ("is between", "amount range"): a blank or junk side means unbounded on that side
+  (reuse the existing `bound()` helper semantics). Bounds are INCLUSIVE, applied as typed
+  (never swapped — live filtering must not jump around mid-typing; this rule already exists).
+- Generation 'is' with a typed number matches `Number(value)`; 'is unknown' matches people whose
+  generation is the string 'unknown' (see MODEL CHANGE below). Inclusive between, blank side unbounded.
+- Age 'is' matches numeric age equality; 'is unknown' matches age 'unknown'/null/undefined
+  (current behavior); 'is between' inclusive with unbounded blank sides.
+- Mom/Dad contains: resolve the mom/dad ID to the person via index.byId, then case-insensitive
+  contains on displayName. If mom/dad is 'unknown' or 'none', a non-blank query does NOT match.
+  Blank query = inert.
+- Child/Sibling/Spouse: list lengths from index.childrenOf / siblingsOf / spousesOf.
+  'name' mode: any listed person's displayName contains the query (blank = inert).
+- Notes: 'has note' = noteViews(person).length > 0; 'no note' = 0; 'note contains' = any note's
+  text contains the query, case-insensitive (blank = inert).
+- Rows AND together (current filterByRows behavior — keep).
+- Operator option labels exactly: "is", "is between", "is unknown", "amount", "amount range",
+  "name", "has note", "no note", "note contains".
+
+## MODEL CHANGE — generation may be "unknown"
+
+The "is unknown" generation filter must be able to match something. Today the validator and one
+type test demand `generation` be a positive integer, AND app.js line ~174 does
+`state.people = ...filter(p => F.isPositiveInt(p.generation))` which would silently DROP any
+unknown-generation person from the whole app (tree, search, filters). That must not happen —
+every person must stay visible (this app's entire purpose is listing everyone).
+
+1. family.js `validate` (and the duplicate type test in tests/data.test.js): allow
+   `generation` = positive int OR the string 'unknown'.
+2. data/people.json: change `unknown-cousin` to `"generation": "unknown"` (its age/gender/mom/dad
+   are already unknown — this is coherent). All other people keep integer generations.
+3. app.js: keep unknown-generation people in state.people.
+4. Tree layout: unknown-generation people must still appear. Group them in a trailing band after
+   the highest numbered generation (a "? generation" row label), as normal standalone units.
+   They have unknown parents, so no parent junction lines — same rendering as other standalone
+   units. Check deriveUnions/grouping (family.js ~line 273 area and app.js ~lines 170-290) and
+   make sure nothing divides or sorts on generation in a way that NaNs out on 'unknown'.
+   Placement rule: unknown-generation units sort AFTER all numbered generations on their band.
+
+## TASK C — style the filter rows (they work but look plain)
+
+Polish .filter-row layout in public/styles.css: consistent with the existing dark theme
+(steal values from existing panel/button styles), comfortable selects/inputs/text boxes,
+a tidy small ✕ remove button, decent spacing on a narrow iPhone-width panel, two value boxes
+side by side with an "and" separator for ranges (there is already an .age-range-inputs pattern).
+Keep it simple and consistent — no fancy animations. The panel must still open/close and the
+badge/count wiring must keep working.
+
+## TASK D — tests
+
+Update/add tests in tests/data.test.js (same file, same harness style). At minimum:
+- generation accepts 'unknown' and rejects other junk; unknown-cousin has generation 'unknown'.
+- filterByRows per operator: name contains; generation is / is between (inclusive, blank side
+  unbounded) / is unknown; gender; age is / between / is unknown (junk 'is' matches nothing);
+  mom contains + unknown-mom no-match; dad contains; child amount / amount range / name;
+  sibling name; spouse amount; notes has note / no note / note contains (blank inert).
+- blank-value rows are inert; rows AND together.
+Update any existing tests that reference old operator ids ('includes', 'doesNotInclude',
+'isNot', mom/dad 'is' exact-match, generation select, etc.) to the new spec.
+
+## TASK E — housekeeping
+
+- Delete the stray file public/app.js.patch1 (leftover from a previous patch workflow; first
+  confirm nothing references it: grep the repo).
+- Update README.md's filters section to describe the per-field controls and the singular labels.
+
+## Style constraints
+
+- family.js is ES5-flavored (var/function) — match its local style. app.js already mixes
+  const/arrow — match its local style. No frameworks, no build step, no new dependencies.
+- Do not rename exported family.js functions or the panel element ids listed above.
+- Live typing must re-filter on every keystroke (existing oninput -> applyFilters pattern).
+
+## Definition of done
+
+`node tests/data.test.js` fully green, README updated, patch1 file gone, and a short self-report
+listing: files changed, tests added (count), anything you intentionally did NOT do. Remember the
+orchestrator will verify behavior in a real browser afterwards — build it for real, no stubs.

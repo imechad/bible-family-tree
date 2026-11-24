@@ -142,6 +142,51 @@ fieldset.fp-field legend { padding: 0; margin-bottom: 4px; }
 .fp-age { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 8px; }
 .fp-age legend { width: 100%; }
 .fp-age label { flex: 1 1 0; min-width: 0; }
+/* Filter-builder rows. Each row is a small card:
+     [field] [control]           [✕]   — Name, Gender, Mom, Dad
+     [field] [operator]          [✕]   — fields with modes; their value
+     [value ................... ]      — box(es) wrap to a full-width line */
+#filter-rows { display: flex; flex-direction: column; gap: 8px; }
+#filter-rows:empty { display: none; }
+.filter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.filter-row.has-op .filter-value-container { grid-column: 1 / 3; grid-row: 2; }
+.filter-value-container { min-width: 0; }
+.filter-value-container.empty { display: none; }
+.filter-row select, .filter-row input {
+  width: 100%; min-width: 0;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  /* 16px+ prevents iOS Safari from auto-zooming into the field on focus */
+  font-size: 1rem;
+  font-family: inherit;
+  padding: 7px 9px;
+}
+.filter-row .filter-field { font-weight: 600; }
+.filter-row select:focus, .filter-row input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.filter-row input::placeholder { color: var(--muted); opacity: .8; }
+.filter-range { display: flex; align-items: center; gap: 6px; }
+.filter-range input { flex: 1 1 0; }
+.filter-range-sep { color: var(--muted); font-size: .9rem; flex: none; }
+.filter-remove {
+  grid-column: 3; grid-row: 1;
+  width: 32px; height: 32px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: .95rem; line-height: 1;
+  border-color: transparent;
+}
+.filter-remove:hover, .filter-remove:focus-visible { color: var(--text); border-color: var(--border); }
+#add-filter-row { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; }
+#add-filter-row .icon-plus { width: 16px; height: 16px; }
+.fp-foot .btn:disabled { opacity: .5; cursor: default; }
 .fp-toggle { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 1rem; padding: 4px 0; cursor: pointer; }
 .fp-toggle input { width: 20px; height: 20px; accent-color: var(--accent); margin: 0; flex: none; }
 .fp-foot {

@@ -32,33 +32,16 @@
       <h2 id="filter-title">Filters</h2>
       <button id="filter-close" class="btn ghost close" type="button" aria-label="Close filters">✕</button>
     </div>
+    
     <div class="fp-body">
-      <label class="fp-field">
-        <span>Generation</span>
-        <select id="filter-gen"><option value="">All generations</option></select>
-      </label>
-      <label class="fp-field">
-        <span>Gender</span>
-        <select id="filter-gender">
-          <option value="">All genders</option>
-          <option value="male">Male</option>
-          <option value="female">Female</option>
-        </select>
-      </label>
-      <fieldset class="fp-field fp-age">
-        <legend>Age range</legend>
-        <label><span class="visually-hidden">Minimum age</span><input id="filter-age-min" type="number" inputmode="numeric" min="0" placeholder="min"></label>
-        <span aria-hidden="true">–</span>
-        <label><span class="visually-hidden">Maximum age</span><input id="filter-age-max" type="number" inputmode="numeric" min="0" placeholder="max"></label>
-      </fieldset>
-      <fieldset class="fp-field fp-toggles">
-        <legend>Show only people who…</legend>
-        <label class="fp-toggle"><input id="filter-has-notes" type="checkbox"> Has notes</label>
-        <label class="fp-toggle"><input id="filter-has-children" type="checkbox"> Has children</label>
-        <label class="fp-toggle"><input id="filter-has-spouse" type="checkbox"> Has spouse(s)</label>
-      </fieldset>
-    </div>
-    <div class="fp-foot">
+      <div id="filter-rows"></div>
+      <button id="add-filter-row" class="btn ghost small" type="button">
+        <svg class="icon icon-plus" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" fill="none"/>
+        </svg>
+        Add filter
+      </button>
+    </div><div class="fp-foot">
       <span id="filter-count" class="fp-count" aria-live="polite"></span>
       <button id="filter-reset" class="btn" type="button">Clear filters</button>
     </div>
@@ -107,6 +90,6 @@
   </main>
 
   <script src="family.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

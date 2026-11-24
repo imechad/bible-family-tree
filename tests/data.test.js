@@ -46,7 +46,7 @@ test('every person has the required fields with the right types', () => {
   for (const p of people) {
     assert(typeof p.name === 'string' && p.name.trim(), `${p.id}: name required`);
     assert(['male', 'female', 'unknown'].includes(p.gender), `${p.id}: gender must be male|female|unknown, got ${JSON.stringify(p.gender)}`);
-    assert(Number.isInteger(p.generation) && p.generation > 0, `${p.id}: generation must be a positive int, got ${JSON.stringify(p.generation)}`);
+    assert((Number.isInteger(p.generation) && p.generation > 0) || p.generation === 'unknown', `${p.id}: generation must be a positive int or "unknown", got ${JSON.stringify(p.generation)}`);
     assert(p.age === null || p.age === "unknown" || (typeof p.age === 'number' && p.age >= 0), `${p.id}: age must be null, "unknown", or a non-negative number`);
     assert('mom' in p && 'dad' in p, `${p.id}: mom and dad keys are required (use "unknown" or "none" when appropriate)`);
     assert(Array.isArray(p.notes), `${p.id}: notes must be an array (use [] for none)`);
@@ -197,7 +197,7 @@ test('validate catches the mistakes a hand editor is likely to make', () => {
   ];
   const problems = Family.validate(bad).join('\n');
   for (const needle of ['is not female', 'earlier generation', 'age must be', 'at least one ref',
-    'unrecognised ref "Hezekiah 1:1"', 'not in its refs', '"g" has no name', 'gender must be', 'positive integer']) {
+    'unrecognised ref "Hezekiah 1:1"', 'not in its refs', '"g" has no name', 'gender must be', 'positive integer or "unknown"']) {
     assert(problems.includes(needle), `expected a problem mentioning "${needle}" in:\n${problems}`);
   }
 });
@@ -379,7 +379,9 @@ test('search: comma lists match ANY term; prefixes carry over; attributes and no
   // Empty query: everyone, no reasons, generation order.
   const all = Family.search(people, idx, '  , ');
   assert.strictEqual(all.length, people.length);
-  assert(all.every((r, i) => !r.reasons.length && (i === 0 || all[i - 1].person.generation <= r.person.generation)));
+  const rank = (r) => Family.generationRank(r.person.generation);
+  assert(all.every((r, i) => !r.reasons.length && (i === 0 || rank(all[i - 1]) <= rank(r))));
+  assert.strictEqual(all[all.length - 1].person.id, 'unknown-cousin', 'unknown generation sorts last');
 });
 
 test('filters: age range bounds, blank = unbounded, unknown ages excluded, bounds applied as typed', () => {
@@ -713,6 +715,148 @@ test('invalid state combinations are rejected', () => {
          'Should detect invalid list state value');
 });
 
+// ------------------------------------------------------------------ filter builder rows
+
+const rowIds = (rows) => {
+  const idx = Family.buildIndex(people);
+  return Family.filterByRows(people, idx, rows).map((p) => p.id);
+};
+const R = (field, operator, value, value2) => ({ field, operator: operator || null, value: value === undefined ? '' : value, value2: value2 === undefined ? '' : value2 });
+const allIds = () => people.map((p) => p.id);
+
+test('generation accepts "unknown", rejects other junk; unknown-cousin is generation "unknown"', () => {
+  const base = (id, generation) => ({ id, name: id, gender: 'male', generation, age: null, mom: null, dad: null, spouses: [], notes: [] });
+  for (const ok of [1, 7, 'unknown']) {
+    const problems = Family.validate([base('a', ok)]);
+    assert(!problems.some((p) => /generation/.test(p)), `generation ${JSON.stringify(ok)} should be accepted: ${problems}`);
+  }
+  for (const bad of [0, -1, 2.5, '3', 'Unknown', 'unk', null, undefined, '']) {
+    const problems = Family.validate([base('a', bad)]).join('\n');
+    assert(problems.includes('generation must be a positive integer or "unknown"'), `generation ${JSON.stringify(bad)} should be rejected`);
+  }
+  assert.strictEqual(people.find((p) => p.id === 'unknown-cousin').generation, 'unknown');
+  assert.strictEqual(people.filter((p) => p.generation === 'unknown').length, 1, 'only unknown-cousin has an unknown generation');
+  // Unknown sorts after every numbered generation (tree band + search order).
+  assert(Family.generationRank('unknown') > Family.generationRank(999));
+});
+
+test('filter rows: Name is a case-insensitive contains; blank is inert', () => {
+  assert.deepStrictEqual(rowIds([R('name', null, 'ARLO')]).sort(),
+    allIds().filter((id) => /arlo/i.test(people.find((p) => p.id === id).name)).sort());
+  assert.deepStrictEqual(rowIds([R('name', null, '  wick ')]).sort(), ['fenwick-arlo', 'wick-arlo']);
+  assert.deepStrictEqual(rowIds([R('name', null, '')]), allIds());
+  assert.deepStrictEqual(rowIds([R('name', null, '   ')]), allIds());
+  assert.deepStrictEqual(rowIds([R('name', null, 'zzzz')]), []);
+});
+
+test('filter rows: Generation is / is between (inclusive, blank side unbounded) / is unknown', () => {
+  const gen = (g) => people.filter((p) => p.generation === g).map((p) => p.id);
+  assert.deepStrictEqual(rowIds([R('generation', 'is', '3')]), gen(3));
+  assert.deepStrictEqual(rowIds([R('generation', 'is', '')]), allIds(), 'blank "is" is inert');
+  assert.deepStrictEqual(rowIds([R('generation', 'is', 'abc')]), [], 'junk "is" matches nothing');
+  assert.deepStrictEqual(rowIds([R('generation', 'between', '2', '3')]), gen(2).concat(gen(3)).sort((a, b) => allIds().indexOf(a) - allIds().indexOf(b)));
+  assert.deepStrictEqual(rowIds([R('generation', 'between', '6', '')]), gen(6).concat(gen(7)), 'blank max = unbounded');
+  assert.deepStrictEqual(rowIds([R('generation', 'between', '', '1')]), gen(1), 'blank min = unbounded');
+  assert.deepStrictEqual(rowIds([R('generation', 'between', '', '')]), allIds(), 'both blank = inert');
+  assert(!rowIds([R('generation', 'between', '1', '99')]).includes('unknown-cousin'), 'unknown generation is never in a numeric range');
+  assert.deepStrictEqual(rowIds([R('generation', 'isUnknown')]), ['unknown-cousin']);
+});
+
+test('filter rows: Gender dropdown (blank = any)', () => {
+  for (const g of ['male', 'female', 'unknown']) {
+    const got = rowIds([R('gender', null, g)]);
+    assert(got.length && got.every((id) => people.find((p) => p.id === id).gender === g), g);
+    assert.strictEqual(got.length, people.filter((p) => p.gender === g).length, g);
+  }
+  assert.deepStrictEqual(rowIds([R('gender', null, '')]), allIds());
+  assert(rowIds([R('gender', null, 'unknown')]).includes('ozric-vell'));
+});
+
+test('filter rows: Age is / is between / is unknown; junk "is" matches nothing', () => {
+  assert.deepStrictEqual(rowIds([R('age', 'is', '96')]), ['garrow-vell']);
+  assert.deepStrictEqual(rowIds([R('age', 'is', ' 64 ')]).sort(), ['liesl-thorne', 'nyra-vell']);
+  assert.deepStrictEqual(rowIds([R('age', 'is', '')]), allIds(), 'blank "is" is inert');
+  assert.deepStrictEqual(rowIds([R('age', 'is', 'old')]), [], 'junk "is" matches nothing');
+  const inRange = (lo, hi) => people.filter((p) => typeof p.age === 'number' && p.age >= lo && p.age <= hi).map((p) => p.id);
+  assert.deepStrictEqual(rowIds([R('age', 'between', '61', '64')]), inRange(61, 64), 'inclusive');
+  assert(rowIds([R('age', 'between', '61', '64')]).includes('merrit-vell') && rowIds([R('age', 'between', '61', '64')]).includes('liesl-thorne'));
+  assert.deepStrictEqual(rowIds([R('age', 'between', '90', '')]), ['garrow-vell', 'isoline-ashby'], 'blank max = unbounded');
+  assert.deepStrictEqual(rowIds([R('age', 'between', '', '9')]), ['wick-arlo', 'briar-vell'], 'blank min = unbounded');
+  assert.deepStrictEqual(rowIds([R('age', 'between', '70', '60')]), [], 'bounds applied as typed, never swapped');
+  assert.deepStrictEqual(rowIds([R('age', 'between', '', '')]), allIds(), 'both blank = inert');
+  assert.deepStrictEqual(rowIds([R('age', 'isUnknown')]).sort(), ['hale-arlo', 'pell-vell', 'unknown-cousin']);
+});
+
+test('filter rows: Mom / Dad contain-match the parent\'s name; unknown/none never match a query', () => {
+  const idx = Family.buildIndex(people);
+  const kidsOf = (role, re) => people.filter((p) => idx.byId.has(p[role]) && re.test(idx.byId.get(p[role]).name)).map((p) => p.id);
+  assert.deepStrictEqual(rowIds([R('mom', null, 'wrenna')]), ['lisska-arlo', 'dovrin-arlo', 'hale-arlo']);
+  assert.deepStrictEqual(rowIds([R('mom', null, 'VELL')]), kidsOf('mom', /vell/i));
+  assert.deepStrictEqual(rowIds([R('dad', null, 'brisk')]), ['pim-vell', 'lark-vell']);
+  assert.deepStrictEqual(rowIds([R('dad', null, 'arlo')]), kidsOf('dad', /arlo/i));
+  // Unknown/none parents: a non-blank query never matches, even "unknown"/"none".
+  for (const q of ['unknown', 'none', 'n']) {
+    const got = rowIds([R('mom', null, q)]);
+    assert(!got.includes('unknown-cousin') && !got.includes('garrow-vell') && !got.includes('pim-vell'), `mom "${q}"`);
+  }
+  assert(!rowIds([R('dad', null, 'unknown')]).includes('unknown-cousin'));
+  assert.deepStrictEqual(rowIds([R('mom', null, '')]), allIds(), 'blank is inert');
+  assert.deepStrictEqual(rowIds([R('dad', null, ' ')]), allIds(), 'blank is inert');
+});
+
+test('filter rows: Child / Sibling / Spouse amount, amount range, name', () => {
+  const idx = Family.buildIndex(people);
+  const count = (map, pred) => people.filter((p) => pred((idx[map].get(p.id) || []).length)).map((p) => p.id);
+  // Child
+  assert.deepStrictEqual(rowIds([R('child', 'amount', '4')]), ['bram-vell', 'maelis-dunhart']);
+  assert.deepStrictEqual(rowIds([R('child', 'amount', '0')]), count('childrenOf', (n) => n === 0));
+  assert.deepStrictEqual(rowIds([R('child', 'amount', '')]), allIds(), 'blank amount is inert');
+  assert.deepStrictEqual(rowIds([R('child', 'amount', 'x')]), [], 'junk amount matches nothing');
+  assert.deepStrictEqual(rowIds([R('child', 'amountRange', '2', '3')]), count('childrenOf', (n) => n >= 2 && n <= 3), 'inclusive');
+  assert.deepStrictEqual(rowIds([R('child', 'amountRange', '3', '')]), count('childrenOf', (n) => n >= 3), 'blank max = unbounded');
+  assert.deepStrictEqual(rowIds([R('child', 'amountRange', '', '')]), allIds());
+  assert.deepStrictEqual(rowIds([R('child', 'name', 'briar')]), ['pim-vell']);
+  assert.deepStrictEqual(rowIds([R('child', 'name', 'TADDEO')]), ['ebbet-vell', 'ysolde-marrick']);
+  assert.deepStrictEqual(rowIds([R('child', 'name', '')]), allIds(), 'blank name is inert');
+  // Sibling
+  assert.deepStrictEqual(rowIds([R('sibling', 'name', 'lark')]), ['pim-vell']);
+  assert.deepStrictEqual(rowIds([R('sibling', 'amount', '3')]), count('siblingsOf', (n) => n === 3));
+  assert(rowIds([R('sibling', 'name', 'vell')]).every((id) => (idx.siblingsOf.get(id) || []).some((s) => /vell/i.test(idx.byId.get(s.id).name))));
+  // Spouse
+  assert.deepStrictEqual(rowIds([R('spouse', 'amount', '2')]), ['taddeo-vell']);
+  assert.deepStrictEqual(rowIds([R('spouse', 'amountRange', '1', '1')]), count('spousesOf', (n) => n === 1));
+  assert.deepStrictEqual(rowIds([R('spouse', 'name', 'taddeo')]), ['cassia-holloway', 'odile-fairbairn']);
+});
+
+test('filter rows: Notes has note / no note / note contains (blank inert)', () => {
+  const withNotes = people.filter((p) => Family.noteViews(p).length > 0).map((p) => p.id);
+  assert(withNotes.length > 0 && withNotes.length < people.length);
+  assert.deepStrictEqual(rowIds([R('notes', 'hasNote')]), withNotes);
+  assert.deepStrictEqual(rowIds([R('notes', 'noNote')]), allIds().filter((id) => !withNotes.includes(id)));
+  const word = 'ORCHARD';
+  const expected = people.filter((p) => p.notes.some((n) => n.text.toLowerCase().includes('orchard'))).map((p) => p.id);
+  assert(expected.includes('garrow-vell'));
+  assert.deepStrictEqual(rowIds([R('notes', 'noteContains', word)]), expected, 'case-insensitive contains over note text');
+  assert.deepStrictEqual(rowIds([R('notes', 'noteContains', 'zzqq')]), []);
+  assert.deepStrictEqual(rowIds([R('notes', 'noteContains', '')]), allIds(), 'blank is inert');
+});
+
+test('filter rows AND together; blank rows inert; rowIsActive mirrors inertness', () => {
+  assert.deepStrictEqual(rowIds([]), allIds());
+  assert.deepStrictEqual(rowIds([R('name', null, 'vell'), R('gender', null, 'female'), R('generation', 'is', '3')]), ['nyra-vell', 'rowen-vell']);
+  assert.deepStrictEqual(rowIds([R('mom', null, 'wrenna'), R('age', 'isUnknown')]), ['hale-arlo']);
+  assert.deepStrictEqual(rowIds([R('name', null, 'vell'), R('name', null, 'arlo')]), [], 'contradictory rows match nobody');
+  // A pile of blank rows changes nothing.
+  const blanks = [R('name'), R('gender'), R('mom'), R('dad'), R('generation', 'is'), R('generation', 'between'),
+    R('age', 'is'), R('age', 'between'), R('child', 'amount'), R('sibling', 'amountRange'), R('spouse', 'name'), R('notes', 'noteContains')];
+  assert.deepStrictEqual(rowIds(blanks), allIds());
+  assert(blanks.every((r) => !Family.rowIsActive(r)), 'blank rows are not counted as active');
+  for (const r of [R('name', null, 'a'), R('gender', null, 'male'), R('generation', 'isUnknown'), R('age', 'between', '', '5'),
+    R('child', 'amount', '0'), R('notes', 'hasNote'), R('notes', 'noNote'), R('dad', null, 'x'), R('age', 'is', 'junk')]) {
+    assert(Family.rowIsActive(r), `should be active: ${JSON.stringify(r)}`);
+  }
+});
+
 test('server boots, serves the page, and /api/people returns the array', () => withServer({}, async (port) => {
   const api = await get(port, '/api/people');
   assert.strictEqual(api.status, 200);
@@ -727,8 +871,8 @@ test('server boots, serves the page, and /api/people returns the array', () => w
   // The prefix search was removed — its hint must be gone from the page too.
   assert(!/kid:/.test(page.body), 'prefix search hint should be gone along with the search box');
   // Generation/Gender live in the filter panel now, alongside the new filters.
-  for (const id of ['filters-btn', 'filters-badge', 'filter-panel', 'filter-gen', 'filter-gender', 'filter-age-min', 'filter-age-max',
-    'filter-has-notes', 'filter-has-children', 'filter-has-spouse', 'filter-reset', 'filter-close']) {
+  for (const id of ['filters-btn', 'filters-badge', 'filter-panel', 'add-filter-row', 'filter-rows',
+    'filter-backdrop', 'filter-reset', 'filter-close', 'clear-filters', 'filter-count', 'results-count']) {
     assert(page.body.includes(`id="${id}"`), `page should contain #${id}`);
   }
   assert.strictEqual((await get(port, '/family.js')).status, 200);
