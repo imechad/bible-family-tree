@@ -101,7 +101,7 @@ button { font: inherit; color: inherit; }
 .search input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ---------- filters button + panel ---------- */
-.filters-btn { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.filters-btn { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 6px 10px; font-size: .9rem; border-radius: 999px; }
 .filters-btn[aria-expanded="true"], .filters-btn.on { border-color: var(--accent); }
 /* The badge is the at-a-glance answer to "why did my list shrink?". */
 .filters-badge {
@@ -393,6 +393,8 @@ fieldset.fp-field legend { padding: 0; margin-bottom: 4px; }
 .fields dt { color: var(--muted); font-weight: 600; }
 .fields dd { margin: 0; }
 .fields .none { color: var(--muted); font-style: italic; }
+.fields .none.solid { font-style: normal; font-weight: 600; color: var(--muted); }
+.fields .none.dashed { font-style: italic; border-bottom: 1px dashed var(--muted); padding-bottom: 1px; }
 .links-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .person-link {
   background: none; border: none; padding: 0;
@@ -455,7 +457,7 @@ fieldset.fp-field legend { padding: 0; margin-bottom: 4px; }
   .controls { flex-wrap: wrap; }
   .search { flex-basis: 100%; }
   /* Filters + Clear share one row under the search box. */
-  .filters-btn { flex: 1 1 auto; justify-content: center; padding: 8px 12px; }
+  .filters-btn { flex: 1 1 auto; justify-content: center; padding: 6px 10px; }
   #clear-filters { flex: none; padding: 8px 12px; }
 
   /* Bottom sheet: pinned to the screen edges (never wider than the screen),

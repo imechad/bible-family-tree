@@ -97,7 +97,7 @@
   function notesOf(p) { return Array.isArray(p.notes) ? p.notes.filter(function (n) { return n && typeof n.text === 'string'; }) : []; }
   function ageText(p) { return typeof p.age === 'number' && isFinite(p.age) ? String(p.age) : null; }
   function genderLabel(g) { return g === 'male' ? 'Male' : g === 'female' ? 'Female' : 'Unknown'; }
-  function genderMark(g) { return g === 'male' ? '♂ ' : g === 'female' ? '♀ ' : ''; }
+  function genderMark(g) { return g === 'male' ? '♂ ' : g === 'female' ? '♀ ' : '? '; }
 
   function refLink(ref, label) {
     return el('a', {
@@ -464,7 +464,7 @@
           onclick: function () { select(p.id, { scroll: false, instance: i }); }
         }, [
           el('span', { class: 'n-name', text: displayName(p) }),
-          el('span', { class: 'n-meta', text: genderMark(p.gender) + genderLabel(p.gender) + (age ? ' · age ' + age : '') }),
+          el('span', { class: 'n-meta', text: genderMark(p.gender) + genderLabel(p.gender) + (age && p.age !== "unknown" ? ' · age ' + age : '') }),
           notesCount ? el('span', { class: 'n-ai', title: notesCount + ' AI-gathered note' + (notesCount === 1 ? '' : 's') }, [infoIcon()]) : null,
           list.length > 1 ? el('span', {
             class: 'n-dup',
@@ -704,17 +704,19 @@
     var age = ageText(p);
 
     var parentLink = function (pid) {
+      if (pid === "none") return el('span', { class: 'none solid', text: 'None' });
+      if (pid === "unknown") return el('span', { class: 'none dashed', text: 'Unknown' });
       return pid && idx.byId.has(pid) ? personLink(pid) : el('span', { class: 'none', text: 'Not recorded' });
     };
 
     var fields = el('dl', { class: 'fields' }, [
-      el('dt', { text: 'Generation' }), el('dd', { text: F.isPositiveInt(p.generation) ? String(p.generation) : '?' }),
-      el('dt', { text: 'Gender' }), el('dd', { text: genderLabel(p.gender) }),
-      el('dt', { text: 'Age' }), el('dd', null, [age ? age + ' years' : el('span', { class: 'none', text: 'Unknown' })]),
+      el('dt', { text: 'Generation' }), el('dd', { text: F.isPositiveInt(p.generation) ? String(p.generation) : p.generation === "unknown" ? el('span', { class: 'none dashed', text: 'Unknown' }) : '?' }),
+      el('dt', { text: 'Gender' }), el('dd', { text: p.gender === "unknown" ? el('span', { class: 'none dashed', text: 'Unknown' }) : genderLabel(p.gender) }),
+      el('dt', { text: 'Age' }), el('dd', null, [p.age === "unknown" ? el('span', { class: 'none dashed', text: 'Unknown' }) : typeof p.age === 'number' ? p.age + ' years' : el('span', { class: 'none', text: 'Not recorded' })]),
       el('dt', { text: 'Mom' }), el('dd', null, [parentLink(p.mom)]),
       el('dt', { text: 'Dad' }), el('dd', null, [parentLink(p.dad)]),
-      el('dt', { text: 'Spouses' }), el('dd', null, [linksOrNone(idx.spousesOf.get(id).map(function (s) { return personLink(s); }), 'None recorded')]),
-      el('dt', { text: 'Children' }), el('dd', null, [linksOrNone(childLinks(p), 'None recorded')]),
+      el('dt', { text: 'Spouses' }), el('dd', null, [linksOrNone(idx.spousesOf.get(id).map(function (s) { return personLink(s); }), p.spousesState === "none" ? el('span', { class: 'none solid', text: 'None' }) : p.spousesState === "unknown" ? el('span', { class: 'none dashed', text: 'Unknown' }) : 'None recorded')]),
+      el('dt', { text: 'Children' }), el('dd', null, [linksOrNone(childLinks(p), p.childrenState === "none" ? el('span', { class: 'none solid', text: 'None' }) : p.childrenState === "unknown" ? el('span', { class: 'none dashed', text: 'Unknown' }) : 'None recorded')]),
       el('dt', { text: 'Siblings' }), el('dd', null, [linksOrNone(idx.siblingsOf.get(id).map(function (s) { return personLink(s.id, SIBLING_KIND[s.kind]); }), 'None recorded')])
     ]);
 
@@ -918,7 +920,7 @@
       }, [
         el('div', { class: 'r-name' }, (nameHit ? highlighted(displayName(p), terms) : [displayName(p)])
           .concat(hasNotes ? [' ', el('span', { class: 'r-info', title: 'Has AI-gathered notes' }, [infoIcon()])] : [])),
-        el('div', { class: 'r-meta', text: 'Gen ' + p.generation + ' · ' + genderMark(p.gender) + genderLabel(p.gender) + (age ? ' · age ' + age : '') }),
+        el('div', { class: 'r-meta', text: 'Gen ' + p.generation + ' · ' + genderMark(p.gender) + genderLabel(p.gender) + (age && p.age !== "unknown" ? ' · age ' + age : '') }),
         reasonChips(m.reasons, terms)
       ])]);
     }));

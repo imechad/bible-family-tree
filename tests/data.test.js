@@ -724,7 +724,8 @@ test('server boots, serves the page, and /api/people returns the array', () => w
   const page = await get(port, '/');
   assert.strictEqual(page.status, 200);
   assert.match(page.body, /MOCK DATA/);
-  assert.match(page.body, /kid:/, 'search hint documenting the prefixes should be on the page');
+  // The prefix search was removed — its hint must be gone from the page too.
+  assert(!/kid:/.test(page.body), 'prefix search hint should be gone along with the search box');
   // Generation/Gender live in the filter panel now, alongside the new filters.
   for (const id of ['filters-btn', 'filters-badge', 'filter-panel', 'filter-gen', 'filter-gender', 'filter-age-min', 'filter-age-max',
     'filter-has-notes', 'filter-has-children', 'filter-has-spouse', 'filter-reset', 'filter-close']) {
