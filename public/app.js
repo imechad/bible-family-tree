@@ -4,13 +4,15 @@
 
   var F = window.Family;
 
-  // Card geometry. Rows leave a tall gap below each card so the connector
-  // "bus" lines have room and don't run through names.
+  // Card geometry. Rows leave a tall gap below each family block so the
+  // connector "bus" lines have room and don't run through names.
   var NODE_W = 180;
   var NODE_H = 62;
-  var COL_GAP = 20;
-  var FAMILY_GAP = 44;
-  var ROW_H = NODE_H + 96;
+  var BLOCK_PAD = 8;    // border-to-card padding inside a family block
+  var COUPLE_GAP = 10;  // between mom and dad inside one block
+  var UNIT_GAP = 20;    // between siblings' blocks/cards
+  var FAMILY_GAP = 44;  // between different sibling groups
+  var ROW_H = NODE_H + 2 * BLOCK_PAD + 96;
   var MARGIN_LEFT = 52; // room for the vertical "Gen N" labels
   var MARGIN = 30;
   var ZOOM_MIN = 0.35;
@@ -44,9 +46,10 @@
   var state = {
     index: null,
     people: [],       // renderable people, in data order
-    layout: null,     // { pos: Map(id -> {x,y}), width, height, families: [] }
-    nodeEls: new Map(),
+    layout: null,     // { instances: Map(id -> [{x,y}]), blocks: [], width, height, ... }
+    nodeEls: new Map(),   // id -> [card elements]; a remarried person has one per block
     familyEls: [],
+    blockEls: [],
     selectedId: null,
     zoom: 1
   };
@@ -76,16 +79,13 @@
     return node;
   }
 
-  function fold(s) {
-    // Accent-insensitive search so "Ysolde" is found by "ysolde" and, later,
-    // transliterated names match with or without diacritics.
-    return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  }
+  var fold = F.fold;
 
   function displayName(p) { return p.name && String(p.name).trim() ? p.name : p.id; }
   function notesOf(p) { return Array.isArray(p.notes) ? p.notes.filter(function (n) { return n && typeof n.text === 'string'; }) : []; }
   function ageText(p) { return typeof p.age === 'number' && isFinite(p.age) ? String(p.age) : null; }
   function genderLabel(g) { return g === 'male' ? 'Male' : g === 'female' ? 'Female' : 'Unknown'; }
+  function genderMark(g) { return g === 'male' ? '♂ ' : g === 'female' ? '♀ ' : ''; }
 
   function refLink(ref, label) {
     return el('a', {
@@ -96,15 +96,6 @@
       title: 'Open ' + ref + ' (KJV) on BibleGateway',
       text: (label || ref) + ' ↗'
     });
-  }
-
-  /** Commentary text with any verse references inside it turned into links. */
-  function linkifiedText(text) {
-    var frag = document.createDocumentFragment();
-    F.splitRefs(text).forEach(function (seg) {
-      frag.appendChild(seg.type === 'ref' ? refLink(seg.value) : document.createTextNode(seg.value));
-    });
-    return frag;
   }
 
   // ---------------------------------------------------------------- loading
@@ -189,100 +180,92 @@
   // ---------------------------------------------------------------- layout
 
   /**
-   * Generation rows, top to bottom. Within a row, each sibling group is
-   * centred under its parents and married-in spouses (no recorded parents)
-   * are glued beside their partner, so families read as clusters. Groups that
-   * would overlap are pushed right; that keeps this a single cheap pass,
-   * which matters once the data holds hundreds of people.
+   * Generation rows, top to bottom, built from family blocks: each union
+   * (mom + dad, or a single parent) is one bordered block with the mom on
+   * the left and the dad on the right. People with no union are plain cards.
+   *
+   * Within a row, the blocks/cards of one set of siblings are centred under
+   * their parents' block, in birth order. Groups that would overlap are
+   * pushed right; that keeps this a single cheap pass, which matters once
+   * the data holds hundreds of people.
    */
   function computeLayout(people) {
-    var byId = state.index.byId;
+    var idx = state.index;
     var order = new Map(people.map(function (p, i) { return [p.id, i]; }));
-    var inTree = function (id) { return id && order.has(id); };
+    var fb = F.deriveFamilyBlocks(idx, function (id) { return order.has(id); });
+    var inTree = function (id) { return !!id && order.has(id); };
 
-    // Partners = two people who share a child. Derived, like everything else.
-    var partners = new Map();
-    function addPartner(a, b) {
-      if (!partners.has(a)) partners.set(a, []);
-      if (partners.get(a).indexOf(b) === -1) partners.get(a).push(b);
+    function parentUnion(id) {
+      var p = idx.byId.get(id);
+      var mom = inTree(p.mom) && p.mom !== id ? p.mom : null;
+      var dad = inTree(p.dad) && p.dad !== id ? p.dad : null;
+      return mom || dad ? fb.byKey.get((mom || '') + '|' + (dad || '')) : null;
     }
+
+    // A unit is what occupies a slot in a row: a family block or a lone card.
+    var units = [];
+    fb.blocks.forEach(function (b) {
+      b.members = [b.mom, b.dad].filter(Boolean);
+      // A block sits on its later parent's row: children are always in a
+      // later generation than BOTH parents, so they stay below it.
+      b.gen = Math.max.apply(null, b.members.map(function (id) { return idx.byId.get(id).generation; }));
+      b.width = b.members.length * NODE_W + (b.members.length - 1) * COUPLE_GAP + 2 * BLOCK_PAD;
+      // Hang the block under the parents of whichever member has them (the
+      // "blood" relative); a married-in spouse rides along.
+      var anchor = b.members.filter(function (id) { return parentUnion(id); })
+        .sort(function (a, c) { return order.get(a) - order.get(c); })[0] || null;
+      b.anchorPerson = anchor;
+      units.push({
+        block: b, gen: b.gen, width: b.width, anchorPerson: anchor,
+        anchorUnion: anchor ? parentUnion(anchor) : null,
+        // Remarried siblings keep their blocks side by side, in union order.
+        sub: anchor ? fb.blocksOf.get(anchor).indexOf(b) : 0,
+        first: Math.min.apply(null, b.members.map(function (id) { return order.get(id); }))
+      });
+    });
     people.forEach(function (p) {
-      if (inTree(p.mom) && inTree(p.dad)) { addPartner(p.mom, p.dad); addPartner(p.dad, p.mom); }
+      if (fb.blocksOf.has(p.id)) return;
+      units.push({ id: p.id, gen: p.generation, width: NODE_W, anchorPerson: p.id,
+        anchorUnion: parentUnion(p.id), sub: 0, first: order.get(p.id) });
     });
 
     var gens = Array.from(new Set(people.map(function (p) { return p.generation; }))).sort(function (a, b) { return a - b; });
-    var pos = new Map();
     var rowY = new Map();
+    var instances = new Map();
+    function addInstance(id, inst) {
+      if (!instances.has(id)) instances.set(id, []);
+      instances.get(id).push(inst);
+    }
 
     gens.forEach(function (g, rowIdx) {
-      var y = MARGIN + rowIdx * ROW_H;
+      var y = MARGIN + BLOCK_PAD + rowIdx * ROW_H;
       rowY.set(g, y);
-      var row = people.filter(function (p) { return p.generation === g; });
-      var blocks = [];
-      var blockOf = new Map();
-      var loose = [];
-
-      row.forEach(function (p) {
-        var parentXs = [p.mom, p.dad].filter(function (id) { return id && pos.has(id); })
-          .map(function (id) { return pos.get(id).x + NODE_W / 2; });
-        if (!parentXs.length) { loose.push(p); return; }
-        var key = (p.mom || '') + '|' + (p.dad || '');
-        var block = blocks.find(function (b) { return b.key === key; });
-        if (!block) {
-          block = { key: key, center: parentXs.reduce(function (a, b) { return a + b; }, 0) / parentXs.length, members: [] };
-          blocks.push(block);
-        }
-        block.members.push(p.id);
-        blockOf.set(p.id, block);
-      });
-
-      // Repeat until stable: a spouse can only be glued once their partner
-      // has a spot, and that partner may itself be a just-glued spouse.
-      var changed = true;
-      while (changed && loose.length) {
-        changed = false;
-        loose = loose.filter(function (p) {
-          var mates = partners.get(p.id) || [];
-          var sameRow = mates.find(function (id) { return blockOf.has(id); });
-          if (sameRow) {
-            var b = blockOf.get(sameRow);
-            var at = b.members.indexOf(sameRow) + 1;
-            while (at < b.members.length && !byId.get(b.members[at]).mom && !byId.get(b.members[at]).dad) at++;
-            b.members.splice(at, 0, p.id);
-            blockOf.set(p.id, b);
-            changed = true;
-            return false;
+      var groups = [];
+      var groupOf = new Map();
+      units.filter(function (u) { return u.gen === g; })
+        .sort(function (a, b) { return a.first - b.first; })
+        .forEach(function (u) {
+          var parent = u.anchorUnion;
+          if (!parent || parent.cx === undefined) {
+            groups.push({ center: null, units: [u] });
+            return;
           }
-          var above = mates.find(function (id) { return pos.has(id); });
-          if (above) {
-            var nb = { key: 'spouse:' + p.id, center: pos.get(above).x + NODE_W / 2, members: [p.id] };
-            blocks.push(nb);
-            blockOf.set(p.id, nb);
-            changed = true;
-            return false;
+          if (!groupOf.has(parent.key)) {
+            var grp = { center: parent.cx, parent: parent, units: [] };
+            groupOf.set(parent.key, grp);
+            groups.push(grp);
           }
-          return true;
+          groupOf.get(parent.key).units.push(u);
         });
-      }
 
-      // Whoever is left (e.g. generation 1, or unconnected people) is grouped
-      // with any partners also left, in data order.
-      var looseSet = new Set(loose.map(function (p) { return p.id; }));
-      loose.forEach(function (p) {
-        if (blockOf.has(p.id)) return;
-        var b = { key: 'loose:' + p.id, center: null, members: [] };
-        var queue = [p.id];
-        while (queue.length) {
-          var id = queue.shift();
-          if (blockOf.has(id)) continue;
-          b.members.push(id);
-          blockOf.set(id, b);
-          (partners.get(id) || []).forEach(function (m) { if (looseSet.has(m) && !blockOf.has(m)) queue.push(m); });
-        }
-        blocks.push(b);
+      groups.forEach(function (grp) {
+        if (!grp.parent) return;
+        var kids = grp.parent.children;
+        grp.units.sort(function (a, b) {
+          return kids.indexOf(a.anchorPerson) - kids.indexOf(b.anchorPerson) || a.sub - b.sub;
+        });
       });
-
-      blocks.sort(function (a, b) {
+      groups.sort(function (a, b) {
         if (a.center === null && b.center === null) return 0;
         if (a.center === null) return 1;
         if (b.center === null) return -1;
@@ -290,38 +273,50 @@
       });
 
       var cursor = null;
-      blocks.forEach(function (b) {
-        var width = b.members.length * NODE_W + (b.members.length - 1) * COL_GAP;
-        var left = b.center === null ? (cursor === null ? 0 : cursor) : b.center - width / 2;
+      groups.forEach(function (grp) {
+        var width = grp.units.reduce(function (w, u) { return w + u.width; }, 0) + (grp.units.length - 1) * UNIT_GAP;
+        var left = grp.center === null ? (cursor === null ? 0 : cursor) : grp.center - width / 2;
         if (cursor !== null && left < cursor) left = cursor;
-        b.members.forEach(function (id, i) { pos.set(id, { x: left + i * (NODE_W + COL_GAP), y: y }); });
-        cursor = left + width + FAMILY_GAP;
+        grp.units.forEach(function (u) {
+          u.x = left;
+          if (u.block) {
+            var b = u.block;
+            b.x = left;
+            b.y = y - BLOCK_PAD;
+            b.cx = left + b.width / 2;
+            b.members.forEach(function (id, i) {
+              addInstance(id, { x: left + BLOCK_PAD + i * (NODE_W + COUPLE_GAP), y: y, block: b });
+            });
+          } else {
+            addInstance(u.id, { x: left, y: y, block: null });
+          }
+          left += u.width + UNIT_GAP;
+        });
+        cursor = left - UNIT_GAP + FAMILY_GAP;
       });
     });
 
     // Pushing groups right can leave content at negative x; shift everything
-    // so the leftmost card sits just right of the generation labels.
+    // so the leftmost block sits just right of the generation labels.
     var minX = Infinity, maxX = -Infinity;
-    pos.forEach(function (p) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); });
+    units.forEach(function (u) { minX = Math.min(minX, u.x); maxX = Math.max(maxX, u.x + u.width); });
     var shift = MARGIN_LEFT - minX;
-    pos.forEach(function (p) { p.x += shift; });
+    fb.blocks.forEach(function (b) { b.x += shift; b.cx += shift; });
+    instances.forEach(function (list) { list.forEach(function (inst) { inst.x += shift; }); });
 
-    // Family units: one connector per distinct (mom, dad) pair.
-    var famMap = new Map();
-    people.forEach(function (p) {
-      var parents = [p.mom, p.dad].filter(inTree);
-      if (!parents.length) return;
-      var key = (p.mom || '') + '|' + (p.dad || '');
-      if (!famMap.has(key)) famMap.set(key, { parents: parents, kids: [] });
-      famMap.get(key).kids.push(p.id);
+    // Where a child's trunk branch lands: the copy of them in a block that
+    // hangs under their parents (a remarried person appears more than once).
+    instances.forEach(function (list, id) {
+      var own = list.filter(function (inst) { return inst.block && inst.block.anchorPerson === id; })[0];
+      list.primary = own || list[0];
     });
 
     return {
-      pos: pos,
+      instances: instances,
+      blocks: fb.blocks,
       rowY: rowY,
       gens: gens,
-      families: Array.from(famMap.values()),
-      width: maxX + shift + NODE_W + MARGIN,
+      width: maxX + shift + MARGIN,
       height: MARGIN + gens.length * ROW_H
     };
   }
@@ -339,24 +334,30 @@
     els.nodes.replaceChildren();
     state.nodeEls.clear();
     state.familyEls = [];
+    state.blockEls = [];
 
     L.gens.forEach(function (g) {
       var y = L.rowY.get(g);
-      if (y > MARGIN) els.nodes.appendChild(el('div', { class: 'gen-band', style: 'top:' + (y - (ROW_H - NODE_H) / 2 + 26) + 'px' }));
+      if (y > MARGIN + BLOCK_PAD) els.nodes.appendChild(el('div', { class: 'gen-band', style: 'top:' + (y - BLOCK_PAD - (ROW_H - NODE_H - 2 * BLOCK_PAD) / 2 + 26) + 'px' }));
       els.nodes.appendChild(el('div', { class: 'gen-label', style: 'top:' + y + 'px;height:' + NODE_H + 'px', text: 'Gen ' + g }));
     });
 
-    // Each family's connector is a "bus": parents drop onto a horizontal bar,
-    // children hang off it. Buses in the same row whose spans overlap get
-    // different heights (greedy interval colouring), and each family gets its
-    // own hue, so a parent's drop line that happens to share a column with
-    // someone else's child can't be misread as one continuous line.
+    // Each block with children gets one trunk from its bottom centre down to
+    // a horizontal "bus", with a drop to each child. Buses in the same row
+    // whose spans overlap get different heights (greedy interval colouring),
+    // and each family gets its own hue — shared with its block's border — so
+    // crossing lines can't be misread as one family.
+    var families = L.blocks.filter(function (b) { return b.children.length; }).map(function (b) {
+      var kids = b.children.map(function (id) { return L.instances.get(id).primary; });
+      var xs = [b.cx].concat(kids.map(function (k) { return k.x + NODE_W / 2; }));
+      return {
+        block: b, kids: kids,
+        minX: Math.min.apply(null, xs), maxX: Math.max.apply(null, xs),
+        kidTop: Math.min.apply(null, kids.map(function (k) { return k.y; }))
+      };
+    });
     var byRow = new Map();
-    L.families.forEach(function (fam) {
-      var xs = fam.parents.concat(fam.kids).map(function (id) { return L.pos.get(id).x + NODE_W / 2; });
-      fam.minX = Math.min.apply(null, xs);
-      fam.maxX = Math.max.apply(null, xs);
-      fam.kidTop = Math.min.apply(null, fam.kids.map(function (id) { return L.pos.get(id).y; }));
+    families.forEach(function (fam) {
       if (!byRow.has(fam.kidTop)) byRow.set(fam.kidTop, []);
       byRow.get(fam.kidTop).push(fam);
     });
@@ -370,46 +371,70 @@
         levelEnds[lvl] = fam.maxX;
         fam.level = lvl;
       });
-      var gap = ROW_H - NODE_H;
+      var gap = ROW_H - NODE_H - 2 * BLOCK_PAD; // clear space between block borders
       var step = Math.min(14, (gap - 24) / Math.max(1, levelEnds.length - 1));
       fams.forEach(function (fam) {
-        var busY = kidTop - gap / 2 + (fam.level - (levelEnds.length - 1) / 2) * step;
-        var d = '';
-        fam.parents.forEach(function (id) {
-          var p = L.pos.get(id);
-          d += 'M' + (p.x + NODE_W / 2) + ',' + (p.y + NODE_H) + 'V' + busY;
-        });
-        fam.kids.forEach(function (id) {
-          var c = L.pos.get(id);
-          d += 'M' + (c.x + NODE_W / 2) + ',' + busY + 'V' + c.y;
-        });
+        var b = fam.block;
+        var busY = kidTop - BLOCK_PAD - gap / 2 + (fam.level - (levelEnds.length - 1) / 2) * step;
+        var d = 'M' + b.cx + ',' + (b.y + NODE_H + 2 * BLOCK_PAD) + 'V' + busY;
+        fam.kids.forEach(function (k) { d += 'M' + (k.x + NODE_W / 2) + ',' + busY + 'V' + k.y; });
         d += 'M' + fam.minX + ',' + busY + 'H' + fam.maxX;
         var path = document.createElementNS(SVG, 'path');
         path.setAttribute('d', d);
-        path.style.stroke = FAMILY_HUES[colorIdx++ % FAMILY_HUES.length];
+        b.hue = FAMILY_HUES[colorIdx++ % FAMILY_HUES.length];
+        path.style.stroke = b.hue;
         els.links.appendChild(path);
-        state.familyEls.push({ el: path, members: fam.parents.concat(fam.kids) });
+        state.familyEls.push({ el: path, members: b.members.concat(b.children) });
       });
     });
 
+    // Blocks go in before cards so cards stack on top of the border box.
+    L.blocks.forEach(function (b) {
+      var names = b.members.map(function (id) { return displayName(state.index.byId.get(id)); });
+      var blockEl = el('div', {
+        class: 'family-block' + (b.members.length === 1 ? ' single' : '') + (b.children.length ? '' : ' childless'),
+        style: 'left:' + b.x + 'px;top:' + b.y + 'px;width:' + b.width + 'px;height:' + (NODE_H + 2 * BLOCK_PAD) + 'px' +
+          (b.hue ? ';border-color:' + b.hue : ''),
+        title: (b.members.length === 2 ? 'Family: ' + names.join(' & ') : 'Single parent: ' + names[0]) +
+          (b.children.length ? ' — ' + b.children.length + ' child' + (b.children.length === 1 ? '' : 'ren') : ' — no children recorded'),
+        'aria-hidden': 'true'
+      });
+      els.nodes.appendChild(blockEl);
+      state.blockEls.push({ el: blockEl, members: b.members });
+    });
+
     state.people.forEach(function (p) {
-      var at = L.pos.get(p.id);
+      var list = L.instances.get(p.id) || [];
       var age = ageText(p);
-      var hasNotes = notesOf(p).length > 0;
-      var node = el('button', {
-        type: 'button',
-        class: 'node ' + (p.gender === 'female' ? 'female' : 'male'),
-        style: 'left:' + at.x + 'px;top:' + at.y + 'px;width:' + NODE_W + 'px;height:' + NODE_H + 'px',
-        'data-id': p.id,
-        'aria-label': displayName(p) + ', generation ' + p.generation + (hasNotes ? ', has AI-gathered notes' : ''),
-        onclick: function () { select(p.id, { scroll: false }); }
-      }, [
-        el('span', { class: 'n-name', text: displayName(p) }),
-        el('span', { class: 'n-meta', text: genderLabel(p.gender) + (age ? ' · age ' + age : '') }),
-        hasNotes ? el('span', { class: 'n-ai', title: 'Has AI-gathered notes', text: '🤖' }) : null
-      ]);
-      els.nodes.appendChild(node);
-      state.nodeEls.set(p.id, node);
+      var notesCount = notesOf(p).length;
+      var female = p.gender === 'female';
+      var role = function (inst) {
+        if (!inst.block || inst.block.members.length < 2) return '';
+        return inst.block.mom === p.id ? ', mom in this family' : ', dad in this family';
+      };
+      state.nodeEls.set(p.id, list.map(function (inst, i) {
+        var node = el('button', {
+          type: 'button',
+          class: 'node ' + (female ? 'female' : p.gender === 'male' ? 'male' : 'unknown'),
+          style: 'left:' + inst.x + 'px;top:' + inst.y + 'px;width:' + NODE_W + 'px;height:' + NODE_H + 'px',
+          'data-id': p.id,
+          'aria-label': displayName(p) + ', ' + genderLabel(p.gender) + ', generation ' + p.generation + role(inst) +
+            (list.length > 1 ? ', shown ' + list.length + ' times (one per marriage)' : '') +
+            (notesCount ? ', has AI-gathered notes' : ''),
+          onclick: function () { select(p.id, { scroll: false, instance: i }); }
+        }, [
+          el('span', { class: 'n-name', text: displayName(p) }),
+          el('span', { class: 'n-meta', text: genderMark(p.gender) + genderLabel(p.gender) + (age ? ' · age ' + age : '') }),
+          notesCount ? el('span', { class: 'n-ai', title: notesCount + ' AI-gathered note' + (notesCount === 1 ? '' : 's'), text: 'ℹ️' }) : null,
+          list.length > 1 ? el('span', {
+            class: 'n-dup',
+            title: 'Same person, drawn once in each of their ' + list.length + ' family blocks',
+            text: '⧉ ' + (i + 1) + '/' + list.length
+          }) : null
+        ]);
+        els.nodes.appendChild(node);
+        return node;
+      }));
     });
 
     applyZoom(state.zoom);
@@ -491,16 +516,20 @@
     var L = state.layout;
     els.viewport.scrollTop = 0;
     // Start centred on generation 1 rather than at the far-left edge.
-    var first = state.people.filter(function (p) { return p.generation === L.gens[0]; });
-    if (!first.length) return;
-    var xs = first.map(function (p) { return L.pos.get(p.id).x + NODE_W / 2; });
+    var xs = [];
+    state.people.forEach(function (p) {
+      if (p.generation !== L.gens[0]) return;
+      (L.instances.get(p.id) || []).forEach(function (inst) { xs.push(inst.x + NODE_W / 2); });
+    });
+    if (!xs.length) return;
     var mid = (Math.min.apply(null, xs) + Math.max.apply(null, xs)) / 2;
     els.viewport.scrollLeft = mid * state.zoom - els.viewport.clientWidth / 2;
   }
 
-  function centerOn(id) {
-    var at = state.layout.pos.get(id);
-    if (!at) return;
+  function centerOn(id, instance) {
+    var list = state.layout.instances.get(id);
+    if (!list) return;
+    var at = list[instance] || list.primary;
     var vp = els.viewport;
     var visibleH = vp.clientHeight;
     // On phones the bottom sheet covers the lower part of the tree, so centre
@@ -531,6 +560,7 @@
     if (p.dad && state.index.byId.has(p.dad)) ids.add(p.dad);
     state.index.childrenOf.get(id).forEach(function (c) { ids.add(c); });
     state.index.siblingsOf.get(id).forEach(function (s) { ids.add(s.id); });
+    state.index.spousesOf.get(id).forEach(function (s) { ids.add(s); });
     return ids;
   }
 
@@ -539,11 +569,16 @@
     opts = opts || {};
     state.selectedId = id;
     var related = relatedIds(id);
-    state.nodeEls.forEach(function (node, nid) {
-      node.classList.toggle('selected', nid === id);
-      node.classList.toggle('related', related.has(nid));
+    // Every copy of a remarried person lights up, so it's obvious the two
+    // cards are one person.
+    state.nodeEls.forEach(function (nodes, nid) {
+      nodes.forEach(function (node) {
+        node.classList.toggle('selected', nid === id);
+        node.classList.toggle('related', related.has(nid));
+      });
     });
     state.familyEls.forEach(function (f) { f.el.classList.toggle('active', f.members.indexOf(id) !== -1); });
+    state.blockEls.forEach(function (b) { b.el.classList.toggle('active', b.members.indexOf(id) !== -1); });
     // Put highlighted connectors on top so they're not hidden under grey ones.
     state.familyEls.forEach(function (f) { if (f.el.classList.contains('active')) els.links.appendChild(f.el); });
 
@@ -551,12 +586,14 @@
     markCurrentResult();
     if (history.replaceState) history.replaceState(null, '', '#person=' + encodeURIComponent(id));
 
-    var node = state.nodeEls.get(id);
-    if (opts.scroll && node) {
-      centerOn(id);
-      node.classList.remove('pulse');
-      void node.offsetWidth; // restart the animation on repeat jumps
-      node.classList.add('pulse');
+    var nodes = state.nodeEls.get(id) || [];
+    if (opts.scroll && nodes.length) {
+      centerOn(id, opts.instance);
+      nodes.forEach(function (node) {
+        node.classList.remove('pulse');
+        void node.offsetWidth; // restart the animation on repeat jumps
+        node.classList.add('pulse');
+      });
     }
   }
 
@@ -564,8 +601,9 @@
     els.detail.hidden = true;
     els.sizer.style.marginBottom = '';
     state.selectedId = null;
-    state.nodeEls.forEach(function (n) { n.classList.remove('selected', 'related'); });
+    state.nodeEls.forEach(function (nodes) { nodes.forEach(function (n) { n.classList.remove('selected', 'related'); }); });
     state.familyEls.forEach(function (f) { f.el.classList.remove('active'); });
+    state.blockEls.forEach(function (b) { b.el.classList.remove('active'); });
     markCurrentResult();
     if (history.replaceState) history.replaceState(null, '', location.pathname + location.search);
   }
@@ -599,10 +637,27 @@
     return nodes.length ? el('div', { class: 'links-list' }, nodes) : el('span', { class: 'none', text: noneText });
   }
 
+  /** Children list; when someone has kids by more than one partner, each
+   *  child is tagged with the other parent so the two families stay distinct. */
+  function childLinks(p) {
+    var idx = state.index;
+    var kids = idx.childrenOf.get(p.id);
+    var otherOf = function (c) {
+      var child = idx.byId.get(c);
+      var other = child.mom === p.id ? child.dad : child.mom;
+      return other && idx.byId.has(other) ? other : null;
+    };
+    var others = new Set(kids.map(otherOf));
+    return kids.map(function (c) {
+      var other = otherOf(c);
+      return personLink(c, others.size > 1 ? (other ? 'with ' + displayName(idx.byId.get(other)) : 'other parent unrecorded') : null);
+    });
+  }
+
   function renderDetail(id) {
     var idx = state.index;
     var p = idx.byId.get(id);
-    var notes = notesOf(p);
+    var notes = F.noteViews(p);
     var age = ageText(p);
 
     var parentLink = function (pid) {
@@ -615,14 +670,15 @@
       el('dt', { text: 'Age' }), el('dd', null, [age ? age + ' years' : el('span', { class: 'none', text: 'Unknown' })]),
       el('dt', { text: 'Mom' }), el('dd', null, [parentLink(p.mom)]),
       el('dt', { text: 'Dad' }), el('dd', null, [parentLink(p.dad)]),
-      el('dt', { text: 'Children' }), el('dd', null, [linksOrNone(idx.childrenOf.get(id).map(function (c) { return personLink(c); }), 'None recorded')]),
+      el('dt', { text: 'Spouses' }), el('dd', null, [linksOrNone(idx.spousesOf.get(id).map(function (s) { return personLink(s); }), 'None recorded')]),
+      el('dt', { text: 'Children' }), el('dd', null, [linksOrNone(childLinks(p), 'None recorded')]),
       el('dt', { text: 'Siblings' }), el('dd', null, [linksOrNone(idx.siblingsOf.get(id).map(function (s) { return personLink(s.id, SIBLING_KIND[s.kind]); }), 'None recorded')])
     ]);
 
     var notesSection;
     if (notes.length) {
       notesSection = el('section', { class: 'notes-section' }, [
-        el('h3', null, ['Notes', el('span', { class: 'ai-badge', text: '🤖 AI-gathered notes' })]),
+        el('h3', null, [notes.length > 1 ? 'Notes (' + notes.length + ')' : 'Notes', el('span', { class: 'ai-badge', text: 'ℹ️ AI-gathered notes' })]),
         el('div', { class: 'ai-disclaimer', role: 'note' }, [
           'Notes compiled by an AI from scripture references — verify against the verses linked below.'
         ])
@@ -639,7 +695,7 @@
       el('div', { class: 'subtitle' }, [
         'Generation ' + (p.generation || '?') + ' · ' + genderLabel(p.gender),
         notes.length ? ' ' : null,
-        notes.length ? el('span', { class: 'ai-badge', text: '🤖 AI-gathered notes' }) : null
+        notes.length ? el('span', { class: 'ai-badge', text: 'ℹ️ AI-gathered notes' }) : null
       ]),
       fields,
       notesSection
@@ -648,21 +704,26 @@
     els.detail.scrollTop = 0;
   }
 
+  /** One self-contained entry per note: its own commentary, quoted verses
+   *  and source links, so several notes never blur into one block of text. */
   function renderNote(n) {
-    var refs = Array.isArray(n.refs) ? n.refs.filter(function (r) { return typeof r === 'string' && r.trim(); }) : [];
-    var quotes = Array.isArray(n.quotes) ? n.quotes.filter(function (q) { return q && typeof q.text === 'string'; }) : [];
+    var frag = document.createDocumentFragment();
+    n.segments.forEach(function (seg) {
+      frag.appendChild(seg.type === 'ref' ? refLink(seg.value) : document.createTextNode(seg.value));
+    });
     return el('article', { class: 'note' }, [
-      el('p', { class: 'note-commentary' }, [el('span', { class: 'who', text: 'AI commentary:' }), linkifiedText(n.text)]),
+      n.total > 1 ? el('div', { class: 'note-num', text: 'Note ' + n.number + ' of ' + n.total }) : null,
+      el('p', { class: 'note-commentary' }, [el('span', { class: 'who', text: 'AI commentary:' }), frag]),
       // Scripture is set apart from the commentary so a reader can always
       // tell the source text from the AI's paraphrase of it.
-      el('div', null, quotes.map(function (q) {
+      el('div', null, n.quotes.map(function (q) {
         return el('blockquote', { class: 'verse' }, [
           el('p', { text: '“' + q.text + '”' }),
-          el('cite', null, ['— ', typeof q.ref === 'string' && q.ref ? refLink(q.ref, q.ref + ' (KJV)') : 'unknown reference'])
+          el('cite', null, ['— ', q.ref ? refLink(q.ref, q.ref + ' (KJV)') : 'unknown reference'])
         ]);
       })),
-      el('div', { class: 'note-refs' }, refs.length
-        ? [el('span', { text: 'Sources:' })].concat(refs.map(function (r) { return refLink(r); }))
+      el('div', { class: 'note-refs' }, n.refs.length
+        ? [el('span', { text: 'Sources:' })].concat(n.refs.map(function (r) { return refLink(r.ref); }))
         : [el('span', { class: 'none', text: '⚠ No source reference recorded for this note' })])
     ]);
   }
@@ -678,42 +739,57 @@
     return !!(els.search.value.trim() || els.genSel.value || els.genderSel.value);
   }
 
+  /** [{ person, reasons, rank }] for the search box (see Family.search),
+   *  narrowed by the Generation/Gender dropdowns exactly as before. */
   function currentMatches() {
-    var q = fold(els.search.value.trim());
     var gen = els.genSel.value ? Number(els.genSel.value) : null;
     var gender = els.genderSel.value || null;
-    return state.people
-      .filter(function (p) {
-        return (!q || fold(displayName(p)).indexOf(q) !== -1) &&
-          (gen === null || p.generation === gen) &&
-          (!gender || p.gender === gender);
-      })
-      .sort(function (a, b) { return a.generation - b.generation; }); // stable: data order within a generation
+    return F.search(state.people, state.index, els.search.value).filter(function (m) {
+      return (gen === null || m.person.generation === gen) && (!gender || m.person.gender === gender);
+    });
   }
 
-  function highlighted(name, q) {
-    if (!q) return [name];
-    var i = fold(name).indexOf(q);
-    if (i === -1) return [name];
+  /** Wrap the first occurrence of any search term in <mark>. */
+  function highlighted(text, terms) {
+    var folded = fold(text);
     // fold() can change length for some scripts; only highlight when it didn't.
-    if (fold(name).length !== name.length) return [name];
-    return [name.slice(0, i), el('mark', { text: name.slice(i, i + q.length) }), name.slice(i + q.length)];
+    if (folded.length !== text.length) return [text];
+    for (var i = 0; i < terms.length; i++) {
+      var q = terms[i];
+      var at = q ? folded.indexOf(q) : -1;
+      if (at !== -1) return [text.slice(0, at), el('mark', { text: text.slice(at, at + q.length) }), text.slice(at + q.length)];
+    }
+    return [text];
+  }
+
+  var REASON_SHOWN = 3;
+
+  function reasonChips(reasons, terms) {
+    var extra = reasons.filter(function (r) { return r.field !== 'name'; });
+    if (!extra.length) return null;
+    var chips = extra.slice(0, REASON_SHOWN).map(function (r) {
+      return el('span', { class: 'r-why r-why-' + r.field, title: 'Matched “' + r.term + '” via ' + r.field }, highlighted(r.label, terms));
+    });
+    if (extra.length > REASON_SHOWN) chips.push(el('span', { class: 'r-why more', text: '+' + (extra.length - REASON_SHOWN) + ' more' }));
+    return el('div', { class: 'r-whys' }, chips);
   }
 
   function applyFilters() {
     if (!state.layout) return;
     var active = filtersActive();
     var matches = currentMatches();
-    var matchSet = new Set(matches.map(function (p) { return p.id; }));
-    var q = fold(els.search.value.trim());
+    var matchSet = new Set(matches.map(function (m) { return m.person.id; }));
+    var terms = F.parseQuery(els.search.value).map(function (t) { return t.value; });
 
     els.clear.hidden = !active;
     els.resultsPane.classList.toggle('active', active);
     if (active) setResultsCollapsed(false);
 
-    state.nodeEls.forEach(function (node, id) {
-      node.classList.toggle('dim', active && !matchSet.has(id));
-      node.classList.toggle('match', active && matchSet.has(id));
+    state.nodeEls.forEach(function (nodes, id) {
+      nodes.forEach(function (node) {
+        node.classList.toggle('dim', active && !matchSet.has(id));
+        node.classList.toggle('match', active && matchSet.has(id));
+      });
     });
 
     els.resultsCount.textContent = active
@@ -731,9 +807,11 @@
       return;
     }
 
-    els.results.replaceChildren.apply(els.results, matches.map(function (p) {
+    els.results.replaceChildren.apply(els.results, matches.map(function (m) {
+      var p = m.person;
       var age = ageText(p);
       var hasNotes = notesOf(p).length > 0;
+      var nameHit = m.reasons.some(function (r) { return r.field === 'name'; });
       return el('li', null, [el('button', {
         type: 'button',
         'data-id': p.id,
@@ -743,8 +821,10 @@
           if (narrowMQ.matches) setResultsCollapsed(true);
         }
       }, [
-        el('div', { class: 'r-name' }, highlighted(displayName(p), q).concat(hasNotes ? [' 🤖'] : [])),
-        el('div', { class: 'r-meta', text: 'Gen ' + p.generation + ' · ' + genderLabel(p.gender) + (age ? ' · age ' + age : '') })
+        el('div', { class: 'r-name' }, (nameHit ? highlighted(displayName(p), terms) : [displayName(p)])
+          .concat(hasNotes ? [el('span', { class: 'r-info', title: 'Has AI-gathered notes', text: ' ℹ️' })] : [])),
+        el('div', { class: 'r-meta', text: 'Gen ' + p.generation + ' · ' + genderMark(p.gender) + genderLabel(p.gender) + (age ? ' · age ' + age : '') }),
+        reasonChips(m.reasons, terms)
       ])]);
     }));
     markCurrentResult();
@@ -781,7 +861,7 @@
     if (e.key === 'Enter') {
       var first = currentMatches()[0];
       if (first) {
-        select(first.id, { scroll: true });
+        select(first.person.id, { scroll: true });
         if (narrowMQ.matches) { setResultsCollapsed(true); els.search.blur(); }
       }
     } else if (e.key === 'Escape') {

@@ -1,5 +1,6 @@
 /*
- * Shared family logic: derives children/siblings from people.json and turns
+ * Shared family logic: derives children/siblings/spouses and family blocks
+ * from people.json, searches people by anything attached to them, and turns
  * scripture references into links.
  *
  * Loaded by the browser (as window.Family) AND required by the Node tests, so
@@ -102,6 +103,21 @@
       });
     });
 
+    // Spouse lists are read from BOTH sides and merged, so a one-sided entry
+    // still renders as a marriage; validate() is what flags the asymmetry.
+    var spousesOf = new Map();
+    byId.forEach(function (p) { spousesOf.set(p.id, []); });
+    byId.forEach(function (p) {
+      if (p.spouses === undefined || p.spouses === null) return;
+      if (!Array.isArray(p.spouses)) return; // reported by validate()
+      p.spouses.forEach(function (sid) {
+        if (sid === p.id) { problems.push(p.id + ' lists themself as a spouse'); return; }
+        if (!byId.has(sid)) { problems.push(p.id + '.spouses points to unknown id "' + sid + '"'); return; }
+        if (spousesOf.get(p.id).indexOf(sid) === -1) spousesOf.get(p.id).push(sid);
+        if (spousesOf.get(sid).indexOf(p.id) === -1) spousesOf.get(sid).push(p.id);
+      });
+    });
+
     function parentsOf(p) {
       return {
         mom: p.mom && byId.has(p.mom) ? p.mom : null,
@@ -135,7 +151,7 @@
       siblingsOf.set(p.id, Array.from(seen, function (e) { return { id: e[0], kind: e[1] }; }));
     });
 
-    return { byId: byId, childrenOf: childrenOf, siblingsOf: siblingsOf, problems: problems };
+    return { byId: byId, childrenOf: childrenOf, siblingsOf: siblingsOf, spousesOf: spousesOf, problems: problems };
   }
 
   function isPositiveInt(n) {
@@ -169,6 +185,29 @@
             '" is generation ' + parent.generation + ' (parents must be in an earlier generation)');
         }
       });
+      if (p.spouses !== undefined && p.spouses !== null) {
+        if (!Array.isArray(p.spouses)) {
+          problems.push(who + ' spouses must be an array of ids (use [] for none)');
+        } else {
+          var seenSpouse = new Set();
+          p.spouses.forEach(function (sid) {
+            if (seenSpouse.has(sid)) problems.push(who + ' lists spouse "' + sid + '" twice');
+            seenSpouse.add(sid);
+            var s = index.byId.get(sid);
+            if (!s || sid === p.id) return; // already reported by buildIndex
+            // Marriages are stored on both people so either record can be
+            // read on its own; a one-sided link means someone forgot half.
+            if (!Array.isArray(s.spouses) || s.spouses.indexOf(p.id) === -1) {
+              problems.push(who + ' lists spouse "' + sid + '" but "' + sid + '" does not list ' + who + ' back');
+            }
+            // Family blocks put the mom on the left and the dad on the right,
+            // so a union needs exactly one of each to be drawable.
+            if ((p.gender === 'male' || p.gender === 'female') && s.gender === p.gender) {
+              problems.push(who + ' and spouse "' + sid + '" are both ' + p.gender + ' (a family block needs a mom and a dad)');
+            }
+          });
+        }
+      }
       if (p.notes === undefined) return;
       if (!Array.isArray(p.notes)) { problems.push(who + ' notes must be an array'); return; }
       p.notes.forEach(function (n, i) {
@@ -194,6 +233,273 @@
     return problems;
   }
 
+  // ------------------------------------------------------------ family blocks
+
+  /**
+   * Derive the "unions" the tree draws as family blocks: one per distinct
+   * (mom, dad) pair that is married or has a child together, plus one per
+   * single parent. A remarried person therefore belongs to several blocks.
+   *
+   * Derived (never stored) for the same reason children are: the data only
+   * records parents and spouses, so blocks can't disagree with them.
+   *
+   * `include(id)` lets the UI leave out people it can't place on a row;
+   * a parent who is excluded is treated as unrecorded.
+   *
+   * Block order is meaningful: a remarried person's FIRST block is where
+   * their own parents' trunk line lands, so spousal unions are created first
+   * (in data order, then the order of each `spouses` list) and child-only
+   * unions after.
+   */
+  function deriveFamilyBlocks(index, include) {
+    var ok = function (id) {
+      return typeof id === 'string' && index.byId.has(id) && (!include || include(id));
+    };
+    var blocks = [];
+    var byKey = new Map();
+    var blocksOf = new Map();
+    function unionOf(mom, dad) {
+      var key = (mom || '') + '|' + (dad || '');
+      var b = byKey.get(key);
+      if (!b) {
+        b = { key: key, mom: mom, dad: dad, children: [] };
+        byKey.set(key, b);
+        blocks.push(b);
+        [mom, dad].forEach(function (id) {
+          if (!id) return;
+          if (!blocksOf.has(id)) blocksOf.set(id, []);
+          blocksOf.get(id).push(b);
+        });
+      }
+      return b;
+    }
+
+    index.byId.forEach(function (p) {
+      if (!ok(p.id)) return;
+      (index.spousesOf.get(p.id) || []).forEach(function (sid) {
+        if (!ok(sid)) return;
+        var s = index.byId.get(sid);
+        // Same-gender or unknown-gender pairs can't fill a mom/dad slot;
+        // validate() reports them, the tree just doesn't draw the block.
+        if (p.gender === 'female' && s.gender === 'male') unionOf(p.id, sid);
+        else if (p.gender === 'male' && s.gender === 'female') unionOf(sid, p.id);
+      });
+    });
+
+    index.byId.forEach(function (p) {
+      if (!ok(p.id)) return;
+      var mom = ok(p.mom) && p.mom !== p.id ? p.mom : null;
+      var dad = ok(p.dad) && p.dad !== p.id ? p.dad : null;
+      if (mom || dad) unionOf(mom, dad).children.push(p.id);
+    });
+
+    return { blocks: blocks, byKey: byKey, blocksOf: blocksOf };
+  }
+
+  // ------------------------------------------------------------ notes
+
+  /**
+   * Turn a person's notes into plain view objects, one per note, each with
+   * its own linkified text, quotes and refs. Kept out of the DOM code so the
+   * "every note stands alone with its own sources" rule is unit-testable.
+   */
+  function noteViews(person) {
+    var raw = person && Array.isArray(person.notes) ? person.notes : [];
+    var notes = raw.filter(function (n) { return n && typeof n.text === 'string'; });
+    return notes.map(function (n, i) {
+      var refs = Array.isArray(n.refs) ? n.refs.filter(function (r) { return typeof r === 'string' && r.trim(); }) : [];
+      var quotes = Array.isArray(n.quotes) ? n.quotes.filter(function (q) { return q && typeof q.text === 'string'; }) : [];
+      return {
+        number: i + 1,
+        total: notes.length,
+        segments: splitRefs(n.text).map(function (seg) {
+          return seg.type === 'ref' ? { type: 'ref', value: seg.value, url: bibleUrl(seg.value) } : seg;
+        }),
+        quotes: quotes.map(function (q) {
+          var ref = typeof q.ref === 'string' && q.ref ? q.ref : null;
+          return { ref: ref, text: q.text, url: ref ? bibleUrl(ref) : null };
+        }),
+        refs: refs.map(function (r) { return { ref: r, url: bibleUrl(r) }; })
+      };
+    });
+  }
+
+  // ------------------------------------------------------------ search
+
+  function fold(s) {
+    // Accent-insensitive so "Ysolde" is found by "ysolde" and, later,
+    // transliterated names match with or without diacritics.
+    return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  }
+
+  // Aliases are generous because people type what they'd say out loud
+  // ("child:", "wife:"); each maps to one canonical field.
+  var PREFIXES = {
+    kid: 'kid', kids: 'kid', child: 'kid', children: 'kid',
+    mom: 'mom', mother: 'mom', dad: 'dad', father: 'dad',
+    spouse: 'spouse', spouses: 'spouse', wife: 'spouse', husband: 'spouse',
+    sibling: 'sibling', siblings: 'sibling', sib: 'sibling',
+    gen: 'gen', generation: 'gen', gender: 'gender', sex: 'gender',
+    age: 'age', name: 'name', note: 'notes', notes: 'notes'
+  };
+
+  /**
+   * "kid:Briar, Wick, mom:Lisska" -> [{field:'kid',value:'briar'},
+   * {field:'kid',value:'wick'}, {field:'mom',value:'lisska'}].
+   * A prefix carries over to later unprefixed values, so a list after one
+   * prefix stays in that role. Only known prefix words count, which keeps
+   * free text like "Genesis 4:25" from being mistaken for a field.
+   */
+  function parseQuery(query) {
+    var field = 'any';
+    var terms = [];
+    String(query || '').split(',').forEach(function (seg) {
+      var raw = seg.trim();
+      var m = /^([a-z]+)\s*:\s*(.*)$/i.exec(raw);
+      if (m && PREFIXES[m[1].toLowerCase()]) {
+        field = PREFIXES[m[1].toLowerCase()];
+        raw = m[2].trim();
+      }
+      if (raw) terms.push({ field: field, raw: raw, value: fold(raw) });
+    });
+    return terms;
+  }
+
+  // Lower rank sorts first: someone whose own name matches is the most
+  // likely target, a relative match next, then attributes, then note text.
+  // A typed name that only appears mid-word ("wick" in "Fenwick") is a
+  // weaker hit than one starting a word, so it sorts after relatives.
+  var FIELD_RANK = { name: 0, kid: 1, mom: 1, dad: 1, spouse: 1, sibling: 1, namePart: 1.5, gen: 2, gender: 2, age: 2, notes: 3 };
+
+  function numberMatches(n, v) {
+    if (typeof n !== 'number') return false;
+    var range = /^(\d+)\s*-\s*(\d+)$/.exec(v);
+    if (range) return n >= Number(range[1]) && n <= Number(range[2]);
+    return /^\d+$/.test(v) && n === Number(v);
+  }
+
+  /** Index of v in folded text, only at the start of a word. Used for
+   *  relatives and notes, where plain substring matching snowballs: "male"
+   *  would hit "female", and "wick" would pull in every relative of Fenwick. */
+  function wordStart(foldedText, v) {
+    var at = foldedText.indexOf(v);
+    while (at !== -1) {
+      if (at === 0 || !/[a-z0-9]/.test(foldedText.charAt(at - 1))) return at;
+      at = foldedText.indexOf(v, at + 1);
+    }
+    return -1;
+  }
+
+  function snippet(text, at, len) {
+    var start = Math.max(0, at - 18);
+    var end = Math.min(text.length, at + len + 18);
+    // Snap to word boundaries so the snippet doesn't start with "…: Sec".
+    if (start > 0) { var sp = text.lastIndexOf(' ', at); start = sp >= start ? sp + 1 : at; }
+    if (end < text.length) { var ep = text.indexOf(' ', end); end = ep === -1 ? text.length : ep; }
+    return (start > 0 ? '…' : '') + text.slice(start, end).trim() + (end < text.length ? '…' : '');
+  }
+
+  /**
+   * Free-text / field search over everything attached to a person.
+   * Returns [{ person, rank, reasons: [{ field, term, label, text? }] }],
+   * where each reason says WHY the person matched (e.g. "kid: Lisska Arlo")
+   * so a parent found through a child's name doesn't look like a name hit.
+   * With an empty query everyone is returned with no reasons.
+   */
+  function search(people, index, query) {
+    var terms = parseQuery(query);
+    var nameOf = function (id) {
+      var p = index.byId.get(id);
+      return p && typeof p.name === 'string' && p.name.trim() ? p.name : id;
+    };
+    var order = new Map(people.map(function (p, i) { return [p.id, i]; }));
+    var out = [];
+
+    people.forEach(function (p) {
+      var reasons = [];
+      var seen = new Set();
+      function add(field, term, label, text) {
+        if (seen.has(label)) return;
+        seen.add(label);
+        reasons.push({ field: field, term: term.raw, label: label, text: text || null });
+      }
+      function relatives(field, ids, term) {
+        ids.forEach(function (id) {
+          if (!index.byId.has(id)) return;
+          var n = nameOf(id);
+          if (wordStart(fold(n), term.value) !== -1) add(field, term, field + ': ' + n, n);
+        });
+      }
+
+      terms.forEach(function (t) {
+        var v = t.value;
+        var any = t.field === 'any';
+        // A bare number is almost always a generation or age; matching it
+        // against note text would hit every "Genesis 5:3" and drown them.
+        var numeric = /^\d+(\s*-\s*\d+)?$/.test(v);
+        if (any && numeric) {
+          if (/^\d+$/.test(v) && numberMatches(p.generation, v)) add('gen', t, 'gen ' + p.generation);
+          if (/^\d+$/.test(v) && numberMatches(p.age, v)) add('age', t, 'age ' + p.age);
+          return;
+        }
+        if (any || t.field === 'name') {
+          var own = nameOf(p.id);
+          // Own name keeps plain substring matching (as the search always
+          // has), but a mid-word hit ranks below a word-start one.
+          if (wordStart(fold(own), v) !== -1) add('name', t, 'name', own);
+          else if (fold(own).indexOf(v) !== -1) add('namePart', t, 'name', own);
+        }
+        if (t.field === 'gen' && numberMatches(p.generation, v)) add('gen', t, 'gen ' + p.generation);
+        if (t.field === 'age' && numberMatches(p.age, v)) add('age', t, 'age ' + p.age);
+        // Free text needs the whole word ("female"), the prefix accepts a
+        // start ("gender:f") — otherwise every "f…" name query lists all women.
+        if (typeof p.gender === 'string' &&
+            ((any && v === p.gender) || (t.field === 'gender' && p.gender.indexOf(v) === 0))) {
+          add('gender', t, 'gender: ' + p.gender);
+        }
+        if (any || t.field === 'mom') relatives('mom', [p.mom], t);
+        if (any || t.field === 'dad') relatives('dad', [p.dad], t);
+        if (any || t.field === 'kid') relatives('kid', index.childrenOf.get(p.id) || [], t);
+        if (any || t.field === 'spouse') relatives('spouse', index.spousesOf.get(p.id) || [], t);
+        if (any || t.field === 'sibling') {
+          relatives('sibling', (index.siblingsOf.get(p.id) || []).map(function (s) { return s.id; }), t);
+        }
+        if (any || t.field === 'notes') {
+          var found = false;
+          var quote = null;
+          (Array.isArray(p.notes) ? p.notes : []).some(function (n) {
+            if (!n) return false;
+            var texts = [n.text].concat((n.quotes || []).map(function (q) { return q && q.text; }), n.refs || []);
+            return texts.some(function (tx) {
+              if (typeof tx !== 'string') return false;
+              var folded = fold(tx);
+              var at = wordStart(folded, v);
+              if (at === -1) return false;
+              found = true;
+              // fold() can change length for some scripts; only quote a
+              // snippet when offsets still line up with the original.
+              if (folded.length === tx.length) quote = snippet(tx, at, v.length);
+              return true;
+            });
+          });
+          if (found) add('notes', t, quote ? 'notes: “' + quote + '”' : 'notes');
+        }
+      });
+
+      if (terms.length && !reasons.length) return;
+      var rank = reasons.reduce(function (r, x) { return Math.min(r, FIELD_RANK[x.field]); }, 9);
+      // Callers only care that it was a name hit, not how strong it was.
+      reasons.forEach(function (x) { if (x.field === 'namePart') x.field = 'name'; });
+      out.push({ person: p, reasons: reasons, rank: terms.length ? rank : 0 });
+    });
+
+    // Stable within a rank: by generation, then data order (= birth order).
+    return out.sort(function (a, b) {
+      return a.rank - b.rank || (a.person.generation - b.person.generation) ||
+        order.get(a.person.id) - order.get(b.person.id);
+    });
+  }
+
   return {
     BOOKS: BOOKS,
     isValidRef: isValidRef,
@@ -201,6 +507,11 @@
     bibleUrl: bibleUrl,
     splitRefs: splitRefs,
     buildIndex: buildIndex,
-    validate: validate
+    validate: validate,
+    deriveFamilyBlocks: deriveFamilyBlocks,
+    noteViews: noteViews,
+    fold: fold,
+    parseQuery: parseQuery,
+    search: search
   };
 });

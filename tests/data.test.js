@@ -50,6 +50,7 @@ test('every person has the required fields with the right types', () => {
     assert(p.age === null || (typeof p.age === 'number' && p.age >= 0), `${p.id}: age must be null or a non-negative number`);
     assert('mom' in p && 'dad' in p, `${p.id}: mom and dad keys are required (use null when unknown)`);
     assert(Array.isArray(p.notes), `${p.id}: notes must be an array (use [] for none)`);
+    assert(Array.isArray(p.spouses), `${p.id}: spouses must be an array of ids (use [] for none)`);
     for (const k of ['children', 'siblings']) {
       assert(!(k in p), `${p.id}: "${k}" must not be stored — it is derived from mom/dad`);
     }
@@ -118,6 +119,32 @@ test('sibling sets are mutually consistent with parent linkage', () => {
   }
 });
 
+test('spouse links exist, are mutual, and pair a female with a male', () => {
+  const byId = new Map(people.map((p) => [p.id, p]));
+  for (const p of people) {
+    assert.strictEqual(new Set(p.spouses).size, p.spouses.length, `${p.id}: duplicate spouse id`);
+    for (const sid of p.spouses) {
+      const s = byId.get(sid);
+      assert(s, `${p.id}.spouses -> "${sid}" does not exist`);
+      assert.notStrictEqual(sid, p.id, `${p.id} is their own spouse`);
+      assert(s.spouses.includes(p.id), `${p.id} lists ${sid} as spouse but ${sid} does not list ${p.id}`);
+      assert.notStrictEqual(s.gender, p.gender, `${p.id} and ${sid} are both ${p.gender}`);
+    }
+  }
+});
+
+test('demo data exercises remarriage, a childless couple, and multi-note people', () => {
+  const idx = Family.buildIndex(people);
+  const fb = Family.deriveFamilyBlocks(idx);
+  // Remarriage: someone with 2+ spouses who has children in 2+ of those unions.
+  const remarried = people.filter((p) => p.spouses.length >= 2 &&
+    (fb.blocksOf.get(p.id) || []).filter((b) => b.mom && b.dad && b.children.length).length >= 2);
+  assert(remarried.length >= 1, 'need at least one remarried person with children by two spouses');
+  assert(fb.blocks.some((b) => b.mom && b.dad && b.children.length === 0), 'need a married couple with no children');
+  assert(fb.blocks.some((b) => !(b.mom && b.dad) && b.children.length), 'need a single-parent family');
+  assert(people.filter((p) => p.notes.length >= 2).length >= 3, 'need at least three people with 2+ notes');
+});
+
 test('every note has text and at least one valid scripture ref', () => {
   for (const p of people) {
     p.notes.forEach((n, i) => {
@@ -166,6 +193,179 @@ test('validate catches the mistakes a hand editor is likely to make', () => {
     'unrecognised ref "Hezekiah 1:1"', 'not in its refs', '"g" has no name', 'gender must be', 'positive integer']) {
     assert(problems.includes(needle), `expected a problem mentioning "${needle}" in:\n${problems}`);
   }
+});
+
+test('validate enforces spouse symmetry, existence, and gender pairing', () => {
+  const base = (id, gender, spouses) => ({ id, name: id, gender, generation: 1, age: null, mom: null, dad: null, spouses, notes: [] });
+  const ok = [base('a', 'male', ['b']), base('b', 'female', ['a'])];
+  assert.deepStrictEqual(Family.validate(ok), []);
+  // No spouses key at all is tolerated by the UI validator (the data test
+  // above is what insists the key is present in the real file).
+  assert.deepStrictEqual(Family.validate([base('solo', 'male', undefined)]), []);
+
+  const problems = Family.validate([
+    base('h', 'male', ['w', 'ghost', 'h']), // w doesn't list h back; ghost unknown; self
+    base('w', 'female', []),
+    base('m1', 'male', ['m2']), base('m2', 'male', ['m1']), // same gender
+    base('d', 'female', ['m3', 'm3']), base('m3', 'male', ['d']), // duplicate
+    base('n', 'female', 'm3') // not an array
+  ]).join('\n');
+  for (const needle of ['"h" lists spouse "w" but "w" does not list "h" back', 'h.spouses points to unknown id "ghost"',
+    'h lists themself as a spouse', 'both male', 'lists spouse "m3" twice', '"n" spouses must be an array']) {
+    assert(problems.includes(needle), `expected a problem mentioning "${needle}" in:\n${problems}`);
+  }
+  // The index still treats a one-sided marriage as a marriage, so the UI
+  // shows it while the warning banner flags it.
+  const idx = Family.buildIndex([base('h', 'male', ['w']), base('w', 'female', [])]);
+  assert.deepStrictEqual(idx.spousesOf.get('w'), ['h']);
+});
+
+test('family blocks: couple, single parent, childless couple, remarriage', () => {
+  const P = (id, gender, extra) => Object.assign({ id, name: id, gender, generation: 1, mom: null, dad: null, spouses: [], notes: [] }, extra);
+  const people = [
+    P('dad', 'male', { spouses: ['wife1', 'wife2'] }),
+    P('wife1', 'female', { spouses: ['dad'] }),
+    P('wife2', 'female', { spouses: ['dad'] }),
+    P('k1', 'female', { generation: 2, mom: 'wife1', dad: 'dad' }),
+    P('k2', 'male', { generation: 2, mom: 'wife1', dad: 'dad' }),
+    P('k3', 'male', { generation: 2, mom: 'wife2', dad: 'dad', spouses: ['bride'] }),
+    P('bride', 'female', { generation: 2, spouses: ['k3'] }),
+    P('k4', 'female', { generation: 2, mom: 'wife2', dad: null }),
+    P('g1', 'male', { generation: 3, mom: 'k4', dad: null })
+  ];
+  const idx = Family.buildIndex(people);
+  const fb = Family.deriveFamilyBlocks(idx);
+  const view = fb.blocks.map((b) => `${b.mom}+${b.dad}:${b.children.join(',')}`);
+  assert.deepStrictEqual(view, [
+    'wife1+dad:k1,k2', // spousal unions first, in the order dad lists them...
+    'wife2+dad:k3',
+    'bride+k3:', //       ...a married couple with no children still gets a block
+    'wife2+null:k4', //   wife2 also had a child with no recorded father: her own single-parent block
+    'k4+null:g1' //       single parent
+  ]);
+  // The remarried father is in two blocks, always in the dad (right) slot.
+  assert.deepStrictEqual(fb.blocksOf.get('dad').map((b) => b.key), ['wife1|dad', 'wife2|dad']);
+  assert(fb.blocksOf.get('dad').every((b) => b.dad === 'dad'));
+  assert.deepStrictEqual(fb.blocksOf.get('wife2').map((b) => b.key), ['wife2|dad', 'wife2|']);
+  // Each child descends from exactly one block.
+  for (const p of people) {
+    const owners = fb.blocks.filter((b) => b.children.includes(p.id));
+    assert.strictEqual(owners.length, p.mom || p.dad ? 1 : 0, `${p.id} should hang from exactly one block`);
+  }
+  // Excluding a parent (e.g. no usable generation) turns them into "unrecorded".
+  const noDad = Family.deriveFamilyBlocks(idx, (id) => id !== 'dad');
+  assert(noDad.byKey.has('wife1|') && noDad.byKey.get('wife1|').children.join() === 'k1,k2');
+  assert(!noDad.blocksOf.has('dad'));
+});
+
+test('family blocks over the real data: mom is female, dad is male, every child has one block', () => {
+  const idx = Family.buildIndex(people);
+  const fb = Family.deriveFamilyBlocks(idx);
+  for (const b of fb.blocks) {
+    if (b.mom) assert.strictEqual(idx.byId.get(b.mom).gender, 'female', `${b.key}: mom slot holds a non-female`);
+    if (b.dad) assert.strictEqual(idx.byId.get(b.dad).gender, 'male', `${b.key}: dad slot holds a non-male`);
+  }
+  for (const p of people) {
+    const n = fb.blocks.filter((b) => b.children.includes(p.id)).length;
+    assert.strictEqual(n, p.mom || p.dad ? 1 : 0, `${p.id} hangs from ${n} blocks`);
+  }
+  // Every recorded marriage shows up as a block.
+  for (const p of people) {
+    for (const sid of p.spouses) {
+      const [mom, dad] = p.gender === 'female' ? [p.id, sid] : [sid, p.id];
+      assert(fb.byKey.has(`${mom}|${dad}`), `marriage ${p.id}+${sid} has no family block`);
+    }
+  }
+});
+
+test('search finds parents by a kid\'s name, kids by a parent\'s name, and says why', () => {
+  const idx = Family.buildIndex(people);
+  const names = (q) => Family.search(people, idx, q).map((r) => r.person.id);
+  const why = (q, id) => Family.search(people, idx, q).find((r) => r.person.id === id).reasons.map((r) => r.label);
+
+  // "Who's got the kid named Briar?" -> Pim, tagged with why.
+  assert.deepStrictEqual(names('kid:Briar'), ['pim-vell']);
+  assert.deepStrictEqual(why('kid:Briar', 'pim-vell'), ['kid: Briar Vell']);
+  // Free text: Lisska herself first, then her parents, siblings, and kids.
+  const lisska = names('lisska');
+  assert.strictEqual(lisska[0], 'lisska-arlo');
+  for (const id of ['wrenna-vell', 'fenwick-arlo', 'dovrin-arlo', 'hale-arlo', 'kestrel-arlo', 'thistle-arlo']) {
+    assert(lisska.includes(id), `"lisska" should find ${id}`);
+  }
+  assert(why('lisska', 'fenwick-arlo').includes('kid: Lisska Arlo'));
+  assert(why('lisska', 'kestrel-arlo').includes('mom: Lisska Arlo'));
+  assert(why('lisska', 'dovrin-arlo').includes('sibling: Lisska Arlo'));
+  assert.deepStrictEqual(why('lisska', 'lisska-arlo'), ['name']);
+  // Reverse direction via prefixes.
+  assert.deepStrictEqual(names('mom:Lisska'), ['kestrel-arlo', 'thistle-arlo']);
+  assert.deepStrictEqual(names('dad:pim'), ['briar-vell']);
+  assert.deepStrictEqual(names('spouse:taddeo').sort(), ['cassia-holloway', 'odile-fairbairn']);
+  assert(names('sibling:sorrel').includes('brisk-vell'));
+});
+
+test('search: comma lists match ANY term; prefixes carry over; attributes and notes', () => {
+  const idx = Family.buildIndex(people);
+  const names = (q) => Family.search(people, idx, q).map((r) => r.person.id);
+
+  // A list after one prefix stays in that role.
+  assert.deepStrictEqual(names('kid:Briar, Wick').sort(), ['pim-vell', 'thistle-arlo']);
+  assert.deepStrictEqual(Family.parseQuery('kid:Briar, Wick, mom: Lisska, Genesis 4:25,'), [
+    { field: 'kid', raw: 'Briar', value: 'briar' }, { field: 'kid', raw: 'Wick', value: 'wick' },
+    { field: 'mom', raw: 'Lisska', value: 'lisska' }, { field: 'mom', raw: 'Genesis 4:25', value: 'genesis 4:25' }
+  ]);
+  // Unknown words before a colon are not prefixes (scripture refs stay free text).
+  assert.deepStrictEqual(Family.parseQuery('Genesis 4:25'), [{ field: 'any', raw: 'Genesis 4:25', value: 'genesis 4:25' }]);
+
+  // Free-text list: every listed name and its relatives; own-name hits first.
+  const list = Family.search(people, idx, 'Briar, Wick');
+  assert.deepStrictEqual(list.slice(0, 2).map((r) => r.person.id).sort(), ['briar-vell', 'wick-arlo']);
+  assert(list.some((r) => r.person.id === 'pim-vell' && r.reasons.some((x) => x.label === 'kid: Briar Vell' && x.term === 'Briar')));
+  // "wick" inside "Fenwick" still finds Fenwick by name (substring, as before)
+  // but ranks after real hits and does NOT drag in all of Fenwick's relatives.
+  const wick = names('wick');
+  assert.deepStrictEqual(wick, ['wick-arlo', 'thistle-arlo', 'fenwick-arlo']);
+
+  // Attributes.
+  assert(names('gen:3').every((id) => idx.byId.get(id).generation === 3));
+  assert(names('3').every((id) => idx.byId.get(id).generation === 3 || idx.byId.get(id).age === 3));
+  assert(names('gender:f').length && names('gender:f').every((id) => idx.byId.get(id).gender === 'female'));
+  assert(names('male').every((id) => idx.byId.get(id).gender === 'male'), '"male" must not match "female"');
+  assert.deepStrictEqual(names('age:96'), ['garrow-vell']);
+  assert(names('age:60-70').every((id) => idx.byId.get(id).age >= 60 && idx.byId.get(id).age <= 70));
+  // Notes text (word-start), with a snippet in the reason.
+  const orchard = Family.search(people, idx, 'orchard');
+  assert(orchard.some((r) => r.person.id === 'garrow-vell'));
+  assert(orchard.every((r) => r.reasons[0].field === 'notes' && r.reasons[0].label.includes('orchard')));
+
+  // Empty query: everyone, no reasons, generation order.
+  const all = Family.search(people, idx, '  , ');
+  assert.strictEqual(all.length, people.length);
+  assert(all.every((r, i) => !r.reasons.length && (i === 0 || all[i - 1].person.generation <= r.person.generation)));
+});
+
+test('multi-note people: each note keeps its own text, quotes, and linked refs', () => {
+  const views = Family.noteViews({
+    notes: [
+      { text: 'First, see Genesis 1:1.', quotes: [{ ref: 'Genesis 1:1', text: 'In the beginning…' }], refs: ['Genesis 1:1'] },
+      null, // malformed entries are skipped rather than breaking the panel
+      { text: 'Second.', refs: ['Genesis 2:15', 'Genesis 8:22'] },
+      { text: 'Third.', quotes: [{ ref: 'Genesis 9:13', text: 'I do set my bow…' }], refs: ['Genesis 9:13'] }
+    ]
+  });
+  assert.deepStrictEqual(views.map((v) => `${v.number}/${v.total}`), ['1/3', '2/3', '3/3']);
+  assert.deepStrictEqual(views.map((v) => v.refs.map((r) => r.ref)), [['Genesis 1:1'], ['Genesis 2:15', 'Genesis 8:22'], ['Genesis 9:13']]);
+  assert.deepStrictEqual(views.map((v) => v.quotes.map((q) => q.ref)), [['Genesis 1:1'], [], ['Genesis 9:13']]);
+  assert.strictEqual(views[2].quotes[0].url, Family.bibleUrl('Genesis 9:13'));
+  assert.strictEqual(views[1].refs[1].url, 'https://www.biblegateway.com/passage/?search=Genesis%208%3A22&version=KJV');
+  // Inline refs in the commentary are linked per note.
+  assert.deepStrictEqual(views[0].segments.filter((s) => s.type === 'ref').map((s) => s.url), [Family.bibleUrl('Genesis 1:1')]);
+  assert.deepStrictEqual(Family.noteViews({ notes: [] }), []);
+  assert.deepStrictEqual(Family.noteViews({}), []);
+
+  // And in the real data, a multi-note person gets one view per stored note.
+  const taddeo = people.find((p) => p.id === 'taddeo-vell');
+  assert.strictEqual(Family.noteViews(taddeo).length, taddeo.notes.length);
+  assert(taddeo.notes.length >= 2);
 });
 
 test('scripture refs validate and build BibleGateway KJV URLs', () => {
@@ -234,6 +434,7 @@ test('server boots, serves the page, and /api/people returns the array', () => w
   const page = await get(port, '/');
   assert.strictEqual(page.status, 200);
   assert.match(page.body, /MOCK DATA/);
+  assert.match(page.body, /kid:/, 'search hint documenting the prefixes should be on the page');
   assert.strictEqual((await get(port, '/family.js')).status, 200);
   assert.strictEqual((await get(port, '/nope.txt')).status, 404);
   const escape = await get(port, '/..%2fdata%2fpeople.json');

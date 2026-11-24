@@ -15,10 +15,13 @@
   <header class="topbar">
     <h1>Bible Family Tree Explorer</h1>
     <div class="controls" role="search">
-      <label class="search">
-        <span class="visually-hidden">Search names</span>
-        <input id="search" type="search" placeholder="Search names…" autocomplete="off" spellcheck="false">
-      </label>
+      <div class="search">
+        <label>
+          <span class="visually-hidden">Search people by name, relatives, or any detail</span>
+          <input id="search" type="search" placeholder="Enter a name, or a list of names: Lisska, Briar…" autocomplete="off" spellcheck="false" aria-describedby="search-hint">
+        </label>
+        <small id="search-hint" class="search-hint" title="Typing a name also finds that person's parents, kids, spouses and siblings, and notes that mention it. Comma-separate several names to find anyone matching any of them.">Prefixes: <code>kid:</code> <code>mom:</code> <code>dad:</code> <code>spouse:</code> <code>sibling:</code> <code>gen:</code> <code>gender:</code> <code>age:</code> (e.g. <code>kid:Briar</code>). Plain names also find their parents, kids, spouses, siblings &amp; notes.</small>
+      </div>
       <label class="filter">
         <span>Generation</span>
         <select id="filter-gen"><option value="">All generations</option></select>
@@ -47,6 +50,13 @@
     </aside>
 
     <section class="tree-pane" aria-label="Family tree">
+      <div class="legend" aria-label="Legend">
+        <span class="lg lg-female">♀ Female · mom, left</span>
+        <span class="lg lg-male">♂ Male · dad, right</span>
+        <span class="lg lg-block">Family block → children below</span>
+        <span class="lg">ℹ️ has notes</span>
+        <span class="lg">⧉ remarried, shown in each family</span>
+      </div>
       <div class="zoom-controls">
         <button class="btn small" type="button" data-zoom="out" aria-label="Zoom out">−</button>
         <button class="btn small" type="button" data-zoom="reset" aria-label="Reset zoom">100%</button>
