@@ -45,10 +45,10 @@ test('ids are unique non-empty strings', () => {
 test('every person has the required fields with the right types', () => {
   for (const p of people) {
     assert(typeof p.name === 'string' && p.name.trim(), `${p.id}: name required`);
-    assert(['male', 'female'].includes(p.gender), `${p.id}: gender must be male|female, got ${JSON.stringify(p.gender)}`);
+    assert(['male', 'female', 'unknown'].includes(p.gender), `${p.id}: gender must be male|female|unknown, got ${JSON.stringify(p.gender)}`);
     assert(Number.isInteger(p.generation) && p.generation > 0, `${p.id}: generation must be a positive int, got ${JSON.stringify(p.generation)}`);
-    assert(p.age === null || (typeof p.age === 'number' && p.age >= 0), `${p.id}: age must be null or a non-negative number`);
-    assert('mom' in p && 'dad' in p, `${p.id}: mom and dad keys are required (use null when unknown)`);
+    assert(p.age === null || p.age === "unknown" || (typeof p.age === 'number' && p.age >= 0), `${p.id}: age must be null, "unknown", or a non-negative number`);
+    assert('mom' in p && 'dad' in p, `${p.id}: mom and dad keys are required (use "unknown" or "none" when appropriate)`);
     assert(Array.isArray(p.notes), `${p.id}: notes must be an array (use [] for none)`);
     assert(Array.isArray(p.spouses), `${p.id}: spouses must be an array of ids (use [] for none)`);
     for (const k of ['children', 'siblings']) {
@@ -61,11 +61,13 @@ test('mom/dad references point to existing people of the right gender', () => {
   const byId = new Map(people.map((p) => [p.id, p]));
   for (const p of people) {
     for (const [role, gender] of [['mom', 'female'], ['dad', 'male']]) {
-      if (p[role] === null) continue;
+      if (p[role] === null || p[role] === "unknown" || p[role] === "none") continue;
       const parent = byId.get(p[role]);
       assert(parent, `${p.id}.${role} -> "${p[role]}" does not exist`);
       assert.notStrictEqual(parent.id, p.id, `${p.id} is their own ${role}`);
-      assert.strictEqual(parent.gender, gender, `${p.id}.${role} -> "${parent.id}" should be ${gender}`);
+      if (parent.gender !== 'unknown') {
+        assert.strictEqual(parent.gender, gender, `${p.id}.${role} -> "${parent.id}" should be ${gender}`);
+      }
       assert(parent.generation < p.generation, `${p.id} (gen ${p.generation}) has ${role} "${parent.id}" in gen ${parent.generation}`);
     }
   }
@@ -84,7 +86,9 @@ test('derived children point back to their parent and resolve to real people', (
   // And the reverse: every recorded parent link shows up as a derived child.
   for (const p of people) {
     for (const role of ['mom', 'dad']) {
-      if (p[role]) assert(idx.childrenOf.get(p[role]).includes(p.id), `${p.id} missing from ${p[role]}'s children`);
+      // "none"/"unknown" are absent-parent markers, not person ids — skip them
+      if (p[role] && p[role] !== 'none' && p[role] !== 'unknown')
+        assert(idx.childrenOf.get(p[role]).includes(p.id), `${p.id} missing from ${p[role]}'s children`);
     }
   }
 });
@@ -112,7 +116,8 @@ test('sibling sets are mutually consistent with parent linkage', () => {
   for (const a of people) {
     for (const b of people) {
       if (a.id === b.id) continue;
-      const share = (a.mom && a.mom === b.mom) || (a.dad && a.dad === b.dad);
+      const share = ((a.mom && a.mom !== "unknown" && a.mom !== "none" && a.mom === b.mom) || 
+                   (a.dad && a.dad !== "unknown" && a.dad !== "none" && a.dad === b.dad));
       const listed = idx.siblingsOf.get(a.id).some((s) => s.id === b.id);
       assert.strictEqual(!!share, listed, `${a.id}/${b.id}: share parent=${!!share} but listed=${listed}`);
     }
@@ -128,7 +133,9 @@ test('spouse links exist, are mutual, and pair a female with a male', () => {
       assert(s, `${p.id}.spouses -> "${sid}" does not exist`);
       assert.notStrictEqual(sid, p.id, `${p.id} is their own spouse`);
       assert(s.spouses.includes(p.id), `${p.id} lists ${sid} as spouse but ${sid} does not list ${p.id}`);
-      assert.notStrictEqual(s.gender, p.gender, `${p.id} and ${sid} are both ${p.gender}`);
+      if (s.gender !== 'unknown' && p.gender !== 'unknown') {
+        assert.notStrictEqual(s.gender, p.gender, `${p.id} and ${sid} are both ${p.gender}`);
+      }
     }
   }
 });
@@ -267,7 +274,9 @@ test('unions over the real data: mom is female, dad is male, every child has one
   }
   for (const p of people) {
     const n = fb.unions.filter((b) => b.children.includes(p.id)).length;
-    assert.strictEqual(n, p.mom || p.dad ? 1 : 0, `${p.id} hangs from ${n} unions`);
+    const hasParents = (p.mom && p.mom !== 'none' && p.mom !== 'unknown') ||
+                       (p.dad && p.dad !== 'none' && p.dad !== 'unknown');
+    assert.strictEqual(n, hasParents ? 1 : 0, `${p.id} hangs from ${n} unions`);
   }
   // Every recorded marriage shows up as a union.
   for (const p of people) {
@@ -540,6 +549,169 @@ async function withServer(env, fn) {
   child.removeAllListeners('exit');
   try { await fn(port, child); } finally { child.kill(); }
 }
+
+
+// ------------------------------------------------------------------ new explicit state tests
+
+test('people count increased to 34 with new unknown cousin', () => {
+  assert.strictEqual(people.length, 34, 'should have 34 people after migration');
+});
+
+test('new explicit unknown/none states are accepted', () => {
+  for (const p of people) {
+    // Check mom/dad states
+    assert(['string', 'null'].includes(typeof p.mom) || p.mom === undefined, `${p.id}: mom must be string, null, or undefined`);
+    assert(['string', 'null'].includes(typeof p.dad) || p.dad === undefined, `${p.id}: dad must be string, null, or undefined`);
+    if (typeof p.mom === 'string') {
+      assert(['unknown', 'none'].includes(p.mom) || people.some(op => op.id === p.mom), 
+             `${p.id}: mom "${p.mom}" must be "unknown", "none", or a valid person id`);
+    }
+    if (typeof p.dad === 'string') {
+      assert(['unknown', 'none'].includes(p.dad) || people.some(op => op.id === p.dad), 
+             `${p.id}: dad "${p.dad}" must be "unknown", "none", or a valid person id`);
+    }
+    
+    // Check age state
+    assert(p.age === null || p.age === "unknown" || (typeof p.age === 'number' && p.age >= 0), 
+           `${p.id}: age must be null, "unknown", or non-negative number`);
+    
+    // Check gender state
+    assert(['male', 'female', 'unknown'].includes(p.gender), 
+           `${p.id}: gender must be "male", "female", or "unknown"`);
+    
+    // Check list states
+    assert(['known', 'none', 'unknown'].includes(p.childrenState), 
+           `${p.id}: childrenState must be "known", "none", or "unknown"`);
+    assert(['known', 'none', 'unknown'].includes(p.spousesState), 
+           `${p.id}: spousesState must be "known", "none", or "unknown"`);
+    assert(['known', 'none', 'unknown'].includes(p.siblingsState), 
+           `${p.id}: siblingsState must be "known", "none", or "unknown"`);
+  }
+});
+
+test('demo story requirements are met', () => {
+  // Gen-1 founders have mom/dad "none" or "unknown" (if they have children)
+  const founders = people.filter(p => p.generation === 1);
+  for (const founder of founders) {
+    // First-of-line founders affirmatively have no parents, children or not
+    assert.strictEqual(founder.mom, "none", `${founder.id}: gen-1 founder should have mom="none"`);
+    assert.strictEqual(founder.dad, "none", `${founder.id}: gen-1 founder should have dad="none"`);
+  }
+  
+  // At least one person has gender "unknown"
+  const unknownGender = people.filter(p => p.gender === "unknown");
+  assert(unknownGender.length >= 1, 'should have at least one person with gender="unknown"');
+  
+  // At least one person has age "unknown"
+  const unknownAge = people.filter(p => p.age === "unknown");
+  assert(unknownAge.length >= 1, 'should have at least one person with age="unknown"');
+  
+  // Check list state diversity
+  const noneChildren = people.filter(p => p.childrenState === "none");
+  const unknownChildren = people.filter(p => p.childrenState === "unknown");
+  const noneSpouses = people.filter(p => p.spousesState === "none");
+  const unknownSpouses = people.filter(p => p.spousesState === "unknown");
+  const noneSiblings = people.filter(p => p.siblingsState === "none");
+  
+  assert(noneChildren.length >= 1, 'should have at least one person with childrenState="none"');
+  assert(unknownChildren.length >= 1, 'should have at least one person with childrenState="unknown"');
+  assert(noneSpouses.length >= 1, 'should have at least one person with spousesState="none"');
+  assert(unknownSpouses.length >= 1, 'should have at least one person with spousesState="unknown"');
+  assert(noneSiblings.length >= 1, 'should have at least one person with siblingsState="none"');
+  
+  // Check the new unknown cousin
+  const unknownCousin = people.find(p => p.id === "unknown-cousin");
+  assert(unknownCousin, 'should have the unknown-cousin person');
+  assert.strictEqual(unknownCousin.gender, "unknown", 'unknown-cousin should have gender="unknown"');
+  assert.strictEqual(unknownCousin.age, "unknown", 'unknown-cousin should have age="unknown"');
+  assert.strictEqual(unknownCousin.mom, "unknown", 'unknown-cousin should have mom="unknown"');
+  assert.strictEqual(unknownCousin.dad, "unknown", 'unknown-cousin should have dad="unknown"');
+  assert.strictEqual(unknownCousin.childrenState, "unknown", 'unknown-cousin should have childrenState="unknown"');
+  assert.strictEqual(unknownCousin.spousesState, "unknown", 'unknown-cousin should have spousesState="unknown"');
+  assert.strictEqual(unknownCousin.siblingsState, "unknown", 'unknown-cousin should have siblingsState="unknown"');
+});
+
+test('Family.validate accepts the new states', () => {
+  const problems = Family.validate(people);
+  assert.deepStrictEqual(problems, [], `Family.validate should pass but found: ${JSON.stringify(problems)}`);
+});
+
+test('buildIndex handles unknown/none states correctly', () => {
+  const idx = Family.buildIndex(people);
+  assert.deepStrictEqual(idx.problems, [], `buildIndex problems: ${JSON.stringify(idx.problems)}`);
+  
+  // Check that people with "none" parents don't create child relationships
+  // Absent-parent markers are never person ids: they must not appear as
+  // childrenOf keys or as derived child ids anywhere in the graph.
+  for (const marker of ["none", "unknown"]) {
+    assert.strictEqual(idx.childrenOf.has(marker), false, `"${marker}" must not be a childrenOf key`);
+    for (const kids of idx.childrenOf.values()) {
+      assert(!kids.includes(marker), `"${marker}" must not appear as a derived child id`);
+    }
+  }
+});
+
+// Test invalid combinations that should be rejected
+test('invalid state combinations are rejected', () => {
+  // Create a test person with invalid state
+  const testPerson = {
+    id: "test-invalid",
+    name: "Test Invalid",
+    gender: "male",
+    generation: 10,
+    age: 30,
+    mom: "none",
+    dad: "unknown",
+    spouses: [],
+    notes: [],
+    childrenState: "none",
+    spousesState: "known",
+    siblingsState: "known"
+  };
+  
+  // Add a child that points to this person (should conflict with childrenState="none")
+  const testChild = {
+    id: "test-child",
+    name: "Test Child", 
+    gender: "male",
+    generation: 11,
+    age: 5,
+    mom: "test-invalid",
+    dad: "unknown",
+    spouses: [],
+    notes: [],
+    childrenState: "known",
+    spousesState: "known",
+    siblingsState: "known"
+  };
+  
+  const testPeople = [...people, testPerson, testChild];
+  const problems = Family.validate(testPeople);
+  
+  // Should detect the inconsistency
+  assert(problems.some(p => p.includes('childrenState="none" but is listed as a parent')), 
+         'Should detect childrenState="none" inconsistency');
+  
+  // Should detect invalid list state values
+  const invalidStatePerson = {
+    id: "test-invalid-state",
+    name: "Test Invalid State",
+    gender: "male", 
+    generation: 10,
+    age: 30,
+    mom: "unknown",
+    dad: "unknown",
+    spouses: [],
+    notes: [],
+    childrenState: "invalid",
+    spousesState: "known",
+    siblingsState: "known"
+  };
+  
+  const problems2 = Family.validate([...people, invalidStatePerson]);
+  assert(problems2.some(p => p.includes('childrenState must be "known", "none", or "unknown"')), 
+         'Should detect invalid list state value');
+});
 
 test('server boots, serves the page, and /api/people returns the array', () => withServer({}, async (port) => {
   const api = await get(port, '/api/people');

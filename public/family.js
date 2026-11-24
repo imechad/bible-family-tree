@@ -92,7 +92,7 @@
     byId.forEach(function (p) {
       ['mom', 'dad'].forEach(function (role) {
         var pid = p[role];
-        if (pid === null || pid === undefined) return;
+        if (pid === null || pid === undefined || pid === "unknown" || pid === "none") return;
         if (!byId.has(pid)) {
           problems.push(p.id + '.' + role + ' points to unknown id "' + pid + '"');
         } else if (pid === p.id) {
@@ -120,8 +120,8 @@
 
     function parentsOf(p) {
       return {
-        mom: p.mom && byId.has(p.mom) ? p.mom : null,
-        dad: p.dad && byId.has(p.dad) ? p.dad : null
+        mom: (p.mom && p.mom !== "unknown" && p.mom !== "none" && byId.has(p.mom)) ? p.mom : null,
+        dad: (p.dad && p.dad !== "unknown" && p.dad !== "none" && byId.has(p.dad)) ? p.dad : null
       };
     }
 
@@ -169,15 +169,15 @@
     index.byId.forEach(function (p) {
       var who = '"' + p.id + '"';
       if (typeof p.name !== 'string' || !p.name.trim()) problems.push(who + ' has no name');
-      if (p.gender !== 'male' && p.gender !== 'female') problems.push(who + ' gender must be "male" or "female"');
+      if (p.gender !== 'male' && p.gender !== 'female' && p.gender !== 'unknown') problems.push(who + ' gender must be "male", "female", or "unknown"');
       if (!isPositiveInt(p.generation)) problems.push(who + ' generation must be a positive integer');
-      if (p.age !== null && p.age !== undefined && !(typeof p.age === 'number' && isFinite(p.age) && p.age >= 0)) {
-        problems.push(who + ' age must be a non-negative number or null');
+      if (p.age !== null && p.age !== undefined && p.age !== "unknown" && !(typeof p.age === 'number' && isFinite(p.age) && p.age >= 0)) {
+        problems.push(who + ' age must be a non-negative number, "unknown", or null');
       }
       [['mom', 'female'], ['dad', 'male']].forEach(function (pair) {
         var parent = p[pair[0]] ? index.byId.get(p[pair[0]]) : null;
         if (!parent) return;
-        if (parent.gender !== pair[1]) problems.push(who + ' ' + pair[0] + ' "' + parent.id + '" is not ' + pair[1]);
+        if (parent.gender !== 'unknown' && parent.gender !== pair[1]) problems.push(who + ' ' + pair[0] + ' "' + parent.id + '" is not ' + pair[1]);
         // A parent must sit in an earlier generation; this also rules out
         // ancestry loops, which would otherwise hang any tree walk.
         if (isPositiveInt(parent.generation) && isPositiveInt(p.generation) && parent.generation >= p.generation) {
@@ -209,6 +209,33 @@
         }
       }
       if (p.notes === undefined) return;
+      // Validate list states
+      ['childrenState', 'spousesState', 'siblingsState'].forEach(function (field) {
+        // Absent state field defaults to "known" (list is authoritative) —
+        // only flag people who wrote an unrecognised value.
+        if (p[field] !== undefined && !['known', 'none', 'unknown'].includes(p[field])) {
+          problems.push(who + ' ' + field + ' must be "known", "none", or "unknown"');
+        }
+      });
+
+      // Validate consistency between list states and actual relationships
+      if (p.childrenState === 'none') {
+        // If someone claims to have no children, they shouldn't be anyone's parent
+        var hasChildren = false;
+        index.byId.forEach(function (other) {
+          if (other.mom === p.id || other.dad === p.id) {
+            hasChildren = true;
+          }
+        });
+        if (hasChildren) {
+          problems.push(who + ' claims childrenState="none" but is listed as a parent');
+        }
+      }
+
+      // NOTE: parent="none" (a first-of-line founder) is fully compatible with
+      // having children — "none" describes THIS person's parents, not their kids.
+      // No validation rule is needed here; the marker simply never resolves to
+      // a person id during index building.
       if (!Array.isArray(p.notes)) { problems.push(who + ' notes must be an array'); return; }
       p.notes.forEach(function (n, i) {
         var where = who + ' note #' + (i + 1);

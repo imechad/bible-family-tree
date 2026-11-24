@@ -5,22 +5,35 @@
     "gender": "male",
     "generation": 1,
     "age": 96,
-    "mom": null,
-    "dad": null,
-    "spouses": ["isoline-ashby"],
+    "mom": "none",
+    "dad": "none",
+    "spouses": [
+      "isoline-ashby"
+    ],
     "notes": [
       {
         "text": "DEMO NOTE: In this invented family saga, Garrow is the founder of the Vell house and is said to have planted the first orchard on the hill farm. The verse below is attached only to show how a quoted citation renders.",
         "quotes": [
-          { "ref": "Genesis 1:11", "text": "And God said, Let the earth bring forth grass, the herb yielding seed, and the fruit tree yielding fruit after his kind, whose seed is in itself, upon the earth: and it was so." }
+          {
+            "ref": "Genesis 1:11",
+            "text": "And God said, Let the earth bring forth grass, the herb yielding seed, and the fruit tree yielding fruit after his kind, whose seed is in itself, upon the earth: and it was so."
+          }
         ],
-        "refs": ["Genesis 1:11"]
+        "refs": [
+          "Genesis 1:11"
+        ]
       },
       {
         "text": "DEMO NOTE: A second note with two references and no quote, to show a note can cite several passages (compare Genesis 2:15 with Genesis 8:22).",
-        "refs": ["Genesis 2:15", "Genesis 8:22"]
+        "refs": [
+          "Genesis 2:15",
+          "Genesis 8:22"
+        ]
       }
-    ]
+    ],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "isoline-ashby",
@@ -28,18 +41,28 @@
     "gender": "female",
     "generation": 1,
     "age": 91,
-    "mom": null,
-    "dad": null,
-    "spouses": ["garrow-vell"],
+    "mom": "none",
+    "dad": "none",
+    "spouses": [
+      "garrow-vell"
+    ],
     "notes": [
       {
         "text": "DEMO NOTE: Fictional matriarch of the demo family. The made-up story says she kept the household ledger and named every grandchild.",
         "quotes": [
-          { "ref": "Genesis 1:28", "text": "And God blessed them, and God said unto them, Be fruitful, and multiply, and replenish the earth, and subdue it: and have dominion over the fish of the sea, and over the fowl of the air, and over every living thing that moveth upon the earth." }
+          {
+            "ref": "Genesis 1:28",
+            "text": "And God blessed them, and God said unto them, Be fruitful, and multiply, and replenish the earth, and subdue it: and have dominion over the fish of the sea, and over the fowl of the air, and over every living thing that moveth upon the earth."
+          }
         ],
-        "refs": ["Genesis 1:28"]
+        "refs": [
+          "Genesis 1:28"
+        ]
       }
-    ]
+    ],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "bram-vell",
@@ -49,16 +72,27 @@
     "age": 78,
     "mom": "isoline-ashby",
     "dad": "garrow-vell",
-    "spouses": ["maelis-dunhart"],
+    "spouses": [
+      "maelis-dunhart"
+    ],
     "notes": [
       {
         "text": "DEMO NOTE: Eldest son in the mock dynasty. This note shows a verse range citation.",
         "quotes": [
-          { "ref": "Genesis 2:24", "text": "Therefore shall a man leave his father and his mother, and shall cleave unto his wife: and they shall be one flesh." }
+          {
+            "ref": "Genesis 2:24",
+            "text": "Therefore shall a man leave his father and his mother, and shall cleave unto his wife: and they shall be one flesh."
+          }
         ],
-        "refs": ["Genesis 2:24", "Genesis 2:18-25"]
+        "refs": [
+          "Genesis 2:24",
+          "Genesis 2:18-25"
+        ]
       }
-    ]
+    ],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "maelis-dunhart",
@@ -66,10 +100,15 @@
     "gender": "female",
     "generation": 2,
     "age": 82,
-    "mom": null,
-    "dad": null,
-    "spouses": ["bram-vell"],
-    "notes": []
+    "mom": "unknown",
+    "dad": "unknown",
+    "spouses": [
+      "bram-vell"
+    ],
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "tessaly-vell",
@@ -83,9 +122,14 @@
     "notes": [
       {
         "text": "DEMO NOTE: In the invented story Tessaly raised her daughter alone after leaving for the coast. The father is deliberately left unrecorded to demo an empty Dad field.",
-        "refs": ["Genesis 1:3"]
+        "refs": [
+          "Genesis 1:3"
+        ]
       }
-    ]
+    ],
+    "childrenState": "known",
+    "spousesState": "none",
+    "siblingsState": "known"
   },
   {
     "id": "corwin-vell",
@@ -95,16 +139,26 @@
     "age": 66,
     "mom": "isoline-ashby",
     "dad": "garrow-vell",
-    "spouses": ["liesl-thorne"],
+    "spouses": [
+      "liesl-thorne"
+    ],
     "notes": [
       {
         "text": "DEMO NOTE: Married to Liesl Thorne but childless in the demo data, to show an empty Children field and a couple block with no child lines. The made-up tale says he spent his life mapping the night sky.",
         "quotes": [
-          { "ref": "Genesis 1:16", "text": "And God made two great lights; the greater light to rule the day, and the lesser light to rule the night: he made the stars also." }
+          {
+            "ref": "Genesis 1:16",
+            "text": "And God made two great lights; the greater light to rule the day, and the lesser light to rule the night: he made the stars also."
+          }
         ],
-        "refs": ["Genesis 1:16"]
+        "refs": [
+          "Genesis 1:16"
+        ]
       }
-    ]
+    ],
+    "childrenState": "none",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "liesl-thorne",
@@ -112,18 +166,28 @@
     "gender": "female",
     "generation": 2,
     "age": 64,
-    "mom": null,
-    "dad": null,
-    "spouses": ["corwin-vell"],
+    "mom": "unknown",
+    "dad": "unknown",
+    "spouses": [
+      "corwin-vell"
+    ],
     "notes": [
       {
         "text": "DEMO NOTE: Married into the mock family and childless, so her block with Corwin shows a marriage with no child lines.",
         "quotes": [
-          { "ref": "Genesis 2:18", "text": "And the LORD God said, It is not good that the man should be alone; I will make him an help meet for him." }
+          {
+            "ref": "Genesis 2:18",
+            "text": "And the LORD God said, It is not good that the man should be alone; I will make him an help meet for him."
+          }
         ],
-        "refs": ["Genesis 2:18"]
+        "refs": [
+          "Genesis 2:18"
+        ]
       }
-    ]
+    ],
+    "childrenState": "unknown",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "ebbet-vell",
@@ -133,8 +197,13 @@
     "age": 71,
     "mom": "maelis-dunhart",
     "dad": "bram-vell",
-    "spouses": ["ysolde-marrick"],
-    "notes": []
+    "spouses": [
+      "ysolde-marrick"
+    ],
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "ysolde-marrick",
@@ -142,10 +211,15 @@
     "gender": "female",
     "generation": 3,
     "age": 69,
-    "mom": null,
-    "dad": null,
-    "spouses": ["ebbet-vell"],
-    "notes": []
+    "mom": "unknown",
+    "dad": "unknown",
+    "spouses": [
+      "ebbet-vell"
+    ],
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "nyra-vell",
@@ -156,18 +230,24 @@
     "mom": "maelis-dunhart",
     "dad": "bram-vell",
     "spouses": [],
-    "notes": []
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "unknown",
+    "siblingsState": "known"
   },
   {
     "id": "pell-vell",
     "name": "Pell Vell",
     "gender": "male",
     "generation": 3,
-    "age": null,
+    "age": "unknown",
     "mom": "maelis-dunhart",
     "dad": "bram-vell",
     "spouses": [],
-    "notes": []
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "quillon-vell",
@@ -178,7 +258,10 @@
     "mom": "maelis-dunhart",
     "dad": "bram-vell",
     "spouses": [],
-    "notes": []
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "rowen-vell",
@@ -187,14 +270,19 @@
     "generation": 3,
     "age": 58,
     "mom": "tessaly-vell",
-    "dad": null,
+    "dad": "unknown",
     "spouses": [],
     "notes": [
       {
         "text": "DEMO NOTE: Only child of a single mother in the mock data. Her son is also listed with no recorded father, so the pattern repeats two generations running.",
-        "refs": ["Genesis 1:31"]
+        "refs": [
+          "Genesis 1:31"
+        ]
       }
-    ]
+    ],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "taddeo-vell",
@@ -204,27 +292,46 @@
     "age": 80,
     "mom": "ysolde-marrick",
     "dad": "ebbet-vell",
-    "spouses": ["cassia-holloway", "odile-fairbairn"],
+    "spouses": [
+      "cassia-holloway",
+      "odile-fairbairn"
+    ],
     "notes": [
       {
         "text": "DEMO NOTE: The invented story says Taddeo married Cassia Holloway young; Brisk and Sorrel are their children.",
         "quotes": [
-          { "ref": "Genesis 2:24", "text": "Therefore shall a man leave his father and his mother, and shall cleave unto his wife: and they shall be one flesh." }
+          {
+            "ref": "Genesis 2:24",
+            "text": "Therefore shall a man leave his father and his mother, and shall cleave unto his wife: and they shall be one flesh."
+          }
         ],
-        "refs": ["Genesis 2:24"]
+        "refs": [
+          "Genesis 2:24"
+        ]
       },
       {
         "text": "DEMO NOTE: After Cassia, the mock tale has him marry Odile Fairbairn, mother of Tamsin. Compare the remarriage wording in Genesis 25:1.",
         "quotes": [
-          { "ref": "Genesis 25:1", "text": "Then again Abraham took a wife, and her name was Keturah." }
+          {
+            "ref": "Genesis 25:1",
+            "text": "Then again Abraham took a wife, and her name was Keturah."
+          }
         ],
-        "refs": ["Genesis 25:1"]
+        "refs": [
+          "Genesis 25:1"
+        ]
       },
       {
         "text": "DEMO NOTE: A third note with no quote and two sources, to show each note keeps its own reference list.",
-        "refs": ["Genesis 33:5", "Genesis 48:9"]
+        "refs": [
+          "Genesis 33:5",
+          "Genesis 48:9"
+        ]
       }
-    ]
+    ],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "cassia-holloway",
@@ -232,10 +339,15 @@
     "gender": "female",
     "generation": 4,
     "age": 75,
-    "mom": null,
-    "dad": null,
-    "spouses": ["taddeo-vell"],
-    "notes": []
+    "mom": "unknown",
+    "dad": "unknown",
+    "spouses": [
+      "taddeo-vell"
+    ],
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "odile-fairbairn",
@@ -243,15 +355,22 @@
     "gender": "female",
     "generation": 4,
     "age": 68,
-    "mom": null,
-    "dad": null,
-    "spouses": ["taddeo-vell"],
+    "mom": "unknown",
+    "dad": "unknown",
+    "spouses": [
+      "taddeo-vell"
+    ],
     "notes": [
       {
         "text": "DEMO NOTE: Taddeo's second wife in the invented story. She exists to prove a remarried person renders in two family blocks.",
-        "refs": ["Genesis 25:1"]
+        "refs": [
+          "Genesis 25:1"
+        ]
       }
-    ]
+    ],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "wrenna-vell",
@@ -261,23 +380,38 @@
     "age": 77,
     "mom": "ysolde-marrick",
     "dad": "ebbet-vell",
-    "spouses": ["fenwick-arlo"],
+    "spouses": [
+      "fenwick-arlo"
+    ],
     "notes": [
       {
         "text": "DEMO NOTE: The invented story has Wrenna marry into the Arlo family, which is why her children carry a different surname. Cited verse is decorative, see Genesis 9:13.",
         "quotes": [
-          { "ref": "Genesis 9:13", "text": "I do set my bow in the cloud, and it shall be for a token of a covenant between me and the earth." }
+          {
+            "ref": "Genesis 9:13",
+            "text": "I do set my bow in the cloud, and it shall be for a token of a covenant between me and the earth."
+          }
         ],
-        "refs": ["Genesis 9:13"]
+        "refs": [
+          "Genesis 9:13"
+        ]
       },
       {
         "text": "DEMO NOTE: A second note for Wrenna. The fictional family remembers her as the one who kept the old orchard going for her children Lisska, Dovrin and Hale.",
         "quotes": [
-          { "ref": "Genesis 8:22", "text": "While the earth remaineth, seedtime and harvest, and cold and heat, and summer and winter, and day and night shall not cease." }
+          {
+            "ref": "Genesis 8:22",
+            "text": "While the earth remaineth, seedtime and harvest, and cold and heat, and summer and winter, and day and night shall not cease."
+          }
         ],
-        "refs": ["Genesis 8:22"]
+        "refs": [
+          "Genesis 8:22"
+        ]
       }
-    ]
+    ],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "fenwick-arlo",
@@ -285,21 +419,29 @@
     "gender": "male",
     "generation": 4,
     "age": 72,
-    "mom": null,
-    "dad": null,
-    "spouses": ["wrenna-vell"],
-    "notes": []
+    "mom": "unknown",
+    "dad": "unknown",
+    "spouses": [
+      "wrenna-vell"
+    ],
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "ozric-vell",
     "name": "Ozric Vell",
-    "gender": "male",
+    "gender": "unknown",
     "generation": 4,
     "age": 55,
     "mom": "rowen-vell",
-    "dad": null,
+    "dad": "unknown",
     "spouses": [],
-    "notes": []
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "merrit-vell",
@@ -307,18 +449,26 @@
     "gender": "female",
     "generation": 4,
     "age": 61,
-    "mom": null,
+    "mom": "unknown",
     "dad": "pell-vell",
     "spouses": [],
     "notes": [
       {
         "text": "DEMO NOTE: Raised by her father alone in the made-up saga, so her Mom field is empty. This is the mirror image of the single-mother case.",
         "quotes": [
-          { "ref": "Genesis 11:1", "text": "And the whole earth was of one language, and of one speech." }
+          {
+            "ref": "Genesis 11:1",
+            "text": "And the whole earth was of one language, and of one speech."
+          }
         ],
-        "refs": ["Genesis 11:1"]
+        "refs": [
+          "Genesis 11:1"
+        ]
       }
-    ]
+    ],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "brisk-vell",
@@ -329,7 +479,10 @@
     "mom": "cassia-holloway",
     "dad": "taddeo-vell",
     "spouses": [],
-    "notes": []
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "sorrel-vell",
@@ -340,7 +493,10 @@
     "mom": "cassia-holloway",
     "dad": "taddeo-vell",
     "spouses": [],
-    "notes": []
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "tamsin-vell",
@@ -351,7 +507,10 @@
     "mom": "odile-fairbairn",
     "dad": "taddeo-vell",
     "spouses": [],
-    "notes": []
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "lisska-arlo",
@@ -366,11 +525,19 @@
       {
         "text": "DEMO NOTE: Eldest of three full siblings in the demo data. The fictional story says she dreamed of a staircase to the stars the night her daughter was born.",
         "quotes": [
-          { "ref": "Genesis 28:12", "text": "And he dreamed, and behold a ladder set up on the earth, and the top of it reached to heaven: and behold the angels of God ascending and descending on it." }
+          {
+            "ref": "Genesis 28:12",
+            "text": "And he dreamed, and behold a ladder set up on the earth, and the top of it reached to heaven: and behold the angels of God ascending and descending on it."
+          }
         ],
-        "refs": ["Genesis 28:12"]
+        "refs": [
+          "Genesis 28:12"
+        ]
       }
-    ]
+    ],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "dovrin-arlo",
@@ -381,18 +548,24 @@
     "mom": "wrenna-vell",
     "dad": "fenwick-arlo",
     "spouses": [],
-    "notes": []
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "hale-arlo",
     "name": "Hale Arlo",
     "gender": "male",
     "generation": 5,
-    "age": null,
+    "age": "unknown",
     "mom": "wrenna-vell",
     "dad": "fenwick-arlo",
     "spouses": [],
-    "notes": []
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "juniver-vell",
@@ -401,9 +574,12 @@
     "generation": 5,
     "age": 40,
     "mom": "merrit-vell",
-    "dad": null,
+    "dad": "unknown",
     "spouses": [],
-    "notes": []
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "kestrel-arlo",
@@ -412,9 +588,12 @@
     "generation": 6,
     "age": 41,
     "mom": "lisska-arlo",
-    "dad": null,
+    "dad": "unknown",
     "spouses": [],
-    "notes": []
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "thistle-arlo",
@@ -423,9 +602,12 @@
     "generation": 6,
     "age": 44,
     "mom": "lisska-arlo",
-    "dad": null,
+    "dad": "unknown",
     "spouses": [],
-    "notes": []
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "pim-vell",
@@ -433,10 +615,13 @@
     "gender": "male",
     "generation": 6,
     "age": 30,
-    "mom": null,
+    "mom": "unknown",
     "dad": "brisk-vell",
     "spouses": [],
-    "notes": []
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "lark-vell",
@@ -444,10 +629,13 @@
     "gender": "female",
     "generation": 6,
     "age": 28,
-    "mom": null,
+    "mom": "unknown",
     "dad": "brisk-vell",
     "spouses": [],
-    "notes": []
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
   },
   {
     "id": "wick-arlo",
@@ -456,9 +644,12 @@
     "generation": 7,
     "age": 9,
     "mom": "thistle-arlo",
-    "dad": null,
+    "dad": "unknown",
     "spouses": [],
-    "notes": []
+    "notes": [],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "none"
   },
   {
     "id": "briar-vell",
@@ -466,24 +657,51 @@
     "gender": "female",
     "generation": 7,
     "age": 6,
-    "mom": null,
+    "mom": "unknown",
     "dad": "pim-vell",
     "spouses": [],
     "notes": [
       {
         "text": "DEMO NOTE: Youngest person in the mock tree (generation 7). Present only to prove the layout handles a deep family line.",
         "quotes": [
-          { "ref": "Genesis 1:1", "text": "In the beginning God created the heaven and the earth." }
+          {
+            "ref": "Genesis 1:1",
+            "text": "In the beginning God created the heaven and the earth."
+          }
         ],
-        "refs": ["Genesis 1:1"]
+        "refs": [
+          "Genesis 1:1"
+        ]
       },
       {
         "text": "DEMO NOTE: Second note for Briar, quoting a different verse than the first so each note's quote can be checked separately.",
         "quotes": [
-          { "ref": "Genesis 1:3", "text": "And God said, Let there be light: and there was light." }
+          {
+            "ref": "Genesis 1:3",
+            "text": "And God said, Let there be light: and there was light."
+          }
         ],
-        "refs": ["Genesis 1:3"]
+        "refs": [
+          "Genesis 1:3"
+        ]
       }
-    ]
+    ],
+    "childrenState": "known",
+    "spousesState": "known",
+    "siblingsState": "known"
+  },
+  {
+    "id": "unknown-cousin",
+    "name": "Unknown Cousin",
+    "gender": "unknown",
+    "generation": 6,
+    "age": "unknown",
+    "mom": "unknown",
+    "dad": "unknown",
+    "spouses": [],
+    "notes": [],
+    "childrenState": "unknown",
+    "spousesState": "unknown",
+    "siblingsState": "unknown"
   }
 ]

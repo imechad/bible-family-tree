@@ -140,13 +140,28 @@ record reads correctly on its own, and the test checks that the two sides agree.
 |--------------|-------------------------------|-------|
 | `id`         | string, unique                | Stable and never reused. Use kebab-case, e.g. `"seth"`, `"jacob-son-of-isaac"`. |
 | `name`       | string                        | Display name. |
-| `gender`     | `"male"` \| `"female"`        | |
-| `generation` | positive integer              | 1 = top row. Must be greater than both parents' generations. |
-| `age`        | number \| `null`              | `null` if scripture doesn't say. |
-| `mom`        | id \| `null`                  | Must be the id of a `"female"` person. |
-| `dad`        | id \| `null`                  | Must be the id of a `"male"` person. |
+| `gender`     | `"male"` \| `"female"` \| `"unknown"` | `"unknown"` = the record doesn't say. |
+| `generation` | positive integer \| `"unknown"` | 1 = top row. A number must be greater than both parents' generations (when known). |
+| `age`        | number \| `"unknown"`         | `"unknown"` if the record doesn't say. |
+| `mom`        | id \| `"unknown"` \| `"none"` | An id must be a `"female"` person (unknown-gender parents are allowed but the union can't draw a mom slot for them). `"unknown"` = not recorded. `"none"` = affirmatively no mother (first of their line). |
+| `dad`        | id \| `"unknown"` \| `"none"` | An id must be a `"male"` person. `"unknown"` = not recorded. `"none"` = affirmatively no father (first of their line). |
 | `spouses`    | array of ids (use `[]` for none) | Zero, one, or several. **Mutual:** if A lists B, B must list A. A spouse must be the opposite gender (a union has a mom slot and a dad slot). Order matters for a remarried person: list the first marriage first; that union is where their own parents' line lands. |
+| `spousesState` | optional `"known"` \| `"none"` \| `"unknown"` | Absent = `"known"` (the list is authoritative). `"none"` = affirmatively never married. `"unknown"` = don't know whether they married. |
+| `childrenState` | optional `"known"` \| `"none"` \| `"unknown"` | Same default. `"none"` = affirmatively childless. `"unknown"` = don't know whether they had children. |
+| `siblingsState` | optional `"known"` \| `"none"` \| `"unknown"` | Same default. `"none"` = affirmatively an only child. |
 | `notes`      | array (use `[]` for none)     | Zero, one, or several notes. Each renders as its own entry. See below. |
+
+### Unknown vs None
+
+These two states mean different things and the UI shows them differently:
+
+- **`"unknown"`** — the record doesn't say. Scripture never named this person's mother, or
+  their age is simply not recorded. Treat as a gap to be filled if a source turns up.
+- **`"none"`** — affirmatively absent. This person had no children, never married, or is the
+  first of their line with no father. This is a settled fact, not a gap.
+
+Parent markers (`"unknown"`/`"none"` in `mom`/`dad`) are never person ids — they don't resolve
+to anyone in the tree, and a founder with `mom`/`dad` = `"none"` can still have children.
 
 **Do not** add `children` or `siblings` fields. They are derived, and the test rejects them.
 List siblings in birth order within the file, because the tree shows them left to right in
