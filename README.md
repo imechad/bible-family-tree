@@ -3,7 +3,8 @@
 A self-hosted, single-page family tree explorer: a pannable/zoomable tree laid out in
 generation rows, where each couple's lines meet at a small junction and their children
 fan out below it, instant search by anything attached to a person
-(their name, kids, parents, spouses, siblings, notes) with Generation and Gender filters,
+(their name, kids, parents, spouses, siblings, notes), a Filters panel (generation, gender,
+age range, has notes / children / spouse),
 and a detail panel showing each person's relatives and scripture-cited, AI-gathered notes.
 
 > **⚠ Phase 1 — MOCK DATA.** `data/people.json` currently holds an invented demo family
@@ -41,8 +42,9 @@ gender and an earlier generation, every spouse id exists and the link is recorde
 links, every note cites at least one valid reference, and generations are positive
 integers. It also unit-tests union derivation (couples, single parents, childless
 couples, remarriage), the junction geometry (pink/blue parent lines meet one pill, the
-children's lines fan out from it, a childless couple keeps the pill with no child lines), search (by a kid's name, comma lists, prefixes) and multi-note
-rendering, then boots the server on a free port and checks that `/api/people` returns the
+children's lines fan out from it, a childless couple keeps the pill with no child lines), search (by a kid's name, comma lists, prefixes), the filter
+panel's logic (age range, has notes / children / spouse, all combined with each other and
+with search, and the badge count) and multi-note rendering, then boots the server on a free port and checks that `/api/people` returns the
 array and that a malformed file produces an error instead of a crash.
 **Run this after every data edit.** It tells you exactly which person and field is wrong.
 
@@ -54,11 +56,12 @@ array and that a malformed file produces an error instead of a crash.
   orange-red **junction** pill, one per union:
   - A **blue line** runs from the dad down to the junction, and a **pink line** runs from
     the mom down to it. These are the same colours as the cards.
-  - A **black line** runs from the junction to each of that union's children, so all
-    siblings fan out from one shared meeting point and parentage is never ambiguous.
-    Each black line has a faint light edge so it stays visible on the dark canvas.
+  - A **light grey line** runs from the junction to each of that union's children, so all
+    siblings fan out from one shared meeting point and parentage is never ambiguous. It is
+    near-white so every child line stands out on the dark canvas (desktop and phone), and
+    neutral so it never reads as a parent's pink or blue line.
   - Cards are colour-coded by gender (pink-tinted ♀ female, blue-tinted ♂ male) and a
-    legend in the corner of the tree explains the lines and the junction. On phones the
+    legend in the corner of the tree explains the pink, blue and light child lines and the junction. On phones the
     legend shrinks to the two line-colour entries so it doesn't cover the tree.
   - A single parent with children still gets a junction: their one coloured line drops
     to it and the children fan out from there.
@@ -67,8 +70,8 @@ array and that a malformed file produces an error instead of a crash.
   - A remarried person is drawn once in **each** union, with a small `⧉ 1/2` / `⧉ 2/2`
     marker. Each union has its own junction. Their own parents' line goes to the first
     copy, and both copies light up when selected.
-  - Selecting someone highlights their unions: lines get thicker, child lines get a gold
-    edge, and the junction gets a gold ring. Parent lines keep their pink/blue colour.
+  - Selecting someone highlights their unions: lines get thicker, child lines turn white
+    with a gold edge, and the junction gets a gold ring. Parent lines keep their pink/blue colour.
     Pan by dragging with the mouse or swiping on touch. Zoom with the − / + buttons or
     Ctrl/⌘ + scroll.
 - **Search and filters:** search is instant and case- and accent-insensitive. It matches
@@ -88,10 +91,26 @@ array and that a malformed file produces an error instead of a crash.
     of *Fenwick*). Own-name matches are plain substrings as before, but ranked after
     word-start hits.
   - Results are ordered: own-name hits, then relatives, then generation/gender/age, then
-    notes, each by generation. The Generation and Gender dropdowns narrow the results
-    further, exactly as before. Clicking a result (or pressing Enter for the first match)
+    notes, each by generation. Clicking a result (or pressing Enter for the first match)
     jumps to that person, highlights them, and opens their details. Non-matching cards
     are dimmed while a search is active.
+- **Filters:** the **Filters** button next to the search box opens a panel with:
+  - **Generation** and **Gender** dropdowns.
+  - **Age range**: min and max boxes, both inclusive. Leave either blank for no bound. When an
+    age bound is set, people whose age isn't recorded are left out. The bounds are used
+    exactly as typed, so a min above the max matches no one.
+  - Checkboxes: **Has notes**, **Has children**, **Has spouse(s)**. Children and spouses
+    come from the derived links, so a single parent counts as having children.
+
+  All filters combine with each other (a person must pass every one) **and** with the text
+  search. They apply as you change them: the result count, the panel's "N people shown"
+  line, the results list and the dimming on the tree all update immediately. While any
+  filter is on, the button shows a gold count badge (the age range counts as one), so you can
+  see at a glance why the list is shorter. **Clear filters** in the panel resets every
+  filter but keeps your search text. The top-bar **Clear** button, and the one in the
+  "no matches" message, clear both. Close the panel with ✕, Escape, or a click outside it.
+  On desktop it drops down under the button. On phones it opens as a bottom sheet that
+  spans the screen width and scrolls inside itself.
 - **Detail panel:** shows Generation, Gender, Age, Mom, Dad, Spouses, Children and
   Siblings. Every relative is a clickable link. When someone has children by more than
   one partner, each child is tagged `(with <other parent>)`. Siblings are labelled `half · same mother` and so on when
@@ -193,8 +212,8 @@ data/people.json     ALL people: the only file to edit for new data
 public/index.html    page shell
 public/styles.css    dark, responsive theme (desktop + iPhone)
 public/family.js     shared logic: derive children/siblings/spouses and unions,
-                     junction geometry, validate, search, note views, verse links
+                     junction geometry, validate, search + filter logic, note views, verse links
                      (used by both the browser and the tests)
-public/app.js        union/junction tree layout and rendering, drawn SVG icons, search UI, filters, detail panel
+public/app.js        union/junction tree layout and rendering, drawn SVG icons, search UI, filter panel, detail panel
 tests/data.test.js   data integrity + server smoke tests (plain node)
 ```

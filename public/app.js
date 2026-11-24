@@ -28,6 +28,18 @@
     genSel: $('filter-gen'),
     genderSel: $('filter-gender'),
     clear: $('clear-filters'),
+    ageMin: $('filter-age-min'),
+    ageMax: $('filter-age-max'),
+    hasNotes: $('filter-has-notes'),
+    hasChildren: $('filter-has-children'),
+    hasSpouse: $('filter-has-spouse'),
+    filtersBtn: $('filters-btn'),
+    filtersBadge: $('filters-badge'),
+    filterPanel: $('filter-panel'),
+    filterBackdrop: $('filter-backdrop'),
+    filterClose: $('filter-close'),
+    filterReset: $('filter-reset'),
+    filterCount: $('filter-count'),
     warning: $('data-warning'),
     resultsPane: $('results-pane'),
     results: $('results'),
@@ -388,7 +400,7 @@
     // Every union gets a junction pill between and below its parents. Each
     // parent's line down to it is drawn in their gender colour, so you can
     // tell which line is mom's and which is dad's even where lines cross;
-    // every child's line fans out from the same pill in neutral ink, so
+    // every child's line fans out from the same pill in a light neutral, so
     // siblings visibly share one meeting point. Lines first, pills on top.
     var lineLayer = svg('g', { class: 'union-lines' });
     var pillLayer = svg('g', { class: 'union-pills' });
@@ -410,8 +422,8 @@
       geo.lines.forEach(function (ln) {
         var d = 'M' + ln.x1 + ',' + ln.y1 + 'L' + ln.x2 + ',' + ln.y2;
         if (ln.kind === 'child') {
-          // A light casing under the black ink keeps "black" child lines
-          // readable on the dark canvas without turning them grey.
+          // Invisible normally; on selection it becomes the gold edge that
+          // shows which children belong to the highlighted union.
           group.appendChild(svg('path', { d: d, class: 'ln-casing' }));
         }
         group.appendChild(svg('path', { d: d, class: 'ln ln-' + ln.kind }));
@@ -761,23 +773,74 @@
 
   els.detailClose.addEventListener('click', closeDetail);
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && !els.detail.hidden && document.activeElement !== els.search) closeDetail();
+    if (e.key !== 'Escape') return;
+    // The filter panel sits on top, so Escape closes it first.
+    if (!els.filterPanel.hidden) { closeFilterPanel(true); return; }
+    if (!els.detail.hidden && document.activeElement !== els.search) closeDetail();
   });
 
   // ---------------------------------------------------------------- search & filters
 
+  /** The filter panel's controls as a plain object (see Family.matchesFilters),
+   *  so the filtering rules live in family.js where the tests can reach them. */
+  function readFilters() {
+    return {
+      gen: els.genSel.value,
+      gender: els.genderSel.value,
+      ageMin: els.ageMin.value,
+      ageMax: els.ageMax.value,
+      hasNotes: els.hasNotes.checked,
+      hasChildren: els.hasChildren.checked,
+      hasSpouse: els.hasSpouse.checked
+    };
+  }
+
   function filtersActive() {
-    return !!(els.search.value.trim() || els.genSel.value || els.genderSel.value);
+    return !!(els.search.value.trim() || F.activeFilterCount(readFilters()));
   }
 
   /** [{ person, reasons, rank }] for the search box (see Family.search),
-   *  narrowed by the Generation/Gender dropdowns exactly as before. */
+   *  ANDed with every filter in the panel. */
   function currentMatches() {
-    var gen = els.genSel.value ? Number(els.genSel.value) : null;
-    var gender = els.genderSel.value || null;
-    return F.search(state.people, state.index, els.search.value).filter(function (m) {
-      return (gen === null || m.person.generation === gen) && (!gender || m.person.gender === gender);
-    });
+    return F.filterSearch(state.people, state.index, els.search.value, readFilters());
+  }
+
+  function updateFilterBadge(matchCount) {
+    var n = F.activeFilterCount(readFilters());
+    els.filtersBadge.hidden = !n;
+    els.filtersBadge.textContent = String(n);
+    els.filtersBtn.classList.toggle('on', n > 0);
+    els.filtersBtn.setAttribute('aria-label', n ? 'Filters, ' + n + ' active' : 'Filters');
+    els.filterReset.disabled = !n;
+    els.filterCount.textContent = matchCount + (matchCount === 1 ? ' person shown' : ' people shown');
+  }
+
+  // Desktop: a popover hanging under the button. Phones get a bottom sheet
+  // from CSS, which overrides these coordinates.
+  function positionFilterPanel() {
+    if (els.filterPanel.hidden || narrowMQ.matches) return;
+    var r = els.filtersBtn.getBoundingClientRect();
+    els.filterPanel.style.top = Math.round(r.bottom + 8) + 'px';
+    els.filterPanel.style.right = Math.max(8, Math.round(window.innerWidth - r.right)) + 'px';
+    els.filterPanel.style.left = 'auto';
+  }
+
+  function openFilterPanel() {
+    els.filterPanel.hidden = false;
+    // The dimming backdrop is only for the phone sheet; on desktop an outside
+    // click is caught by the document listener and still reaches its target.
+    els.filterBackdrop.hidden = !narrowMQ.matches;
+    els.filtersBtn.setAttribute('aria-expanded', 'true');
+    positionFilterPanel();
+    els.genSel.focus({ preventScroll: true });
+  }
+
+  function closeFilterPanel(restoreFocus) {
+    if (els.filterPanel.hidden) return;
+    els.filterPanel.hidden = true;
+    els.filterBackdrop.hidden = true;
+    els.filtersBtn.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) els.filtersBtn.focus({ preventScroll: true });
   }
 
   /** Wrap the first occurrence of any search term in <mark>. */
@@ -826,6 +889,7 @@
     els.resultsCount.textContent = active
       ? matches.length + (matches.length === 1 ? ' match' : ' matches')
       : 'All ' + matches.length + ' people';
+    updateFilterBadge(matches.length);
 
     if (!matches.length) {
       var term = els.search.value.trim();
@@ -874,17 +938,53 @@
     els.resultsToggle.setAttribute('aria-expanded', String(!collapsed));
   }
 
-  function clearFilters() {
-    els.search.value = '';
-    els.genSel.value = '';
-    els.genderSel.value = '';
+  /** The panel's "Clear filters": resets every panel control but leaves the
+   *  search text alone, since that has its own box (and ✕/Escape). */
+  function resetPanelFilters() {
+    var f = F.emptyFilters();
+    els.genSel.value = f.gen;
+    els.genderSel.value = f.gender;
+    els.ageMin.value = f.ageMin;
+    els.ageMax.value = f.ageMax;
+    els.hasNotes.checked = f.hasNotes;
+    els.hasChildren.checked = f.hasChildren;
+    els.hasSpouse.checked = f.hasSpouse;
     applyFilters();
   }
 
+  /** Top-bar "Clear" and the empty state's button: search AND filters. */
+  function clearFilters() {
+    els.search.value = '';
+    resetPanelFilters();
+  }
+
   els.search.addEventListener('input', applyFilters);
-  els.genSel.addEventListener('change', applyFilters);
-  els.genderSel.addEventListener('change', applyFilters);
+  // 'input' as well as 'change' so the count moves while the user is still
+  // typing an age or arrowing through a dropdown, not only on blur.
+  [els.genSel, els.genderSel, els.ageMin, els.ageMax, els.hasNotes, els.hasChildren, els.hasSpouse].forEach(function (c) {
+    c.addEventListener('input', applyFilters);
+    c.addEventListener('change', applyFilters);
+  });
   els.clear.addEventListener('click', clearFilters);
+  els.filterReset.addEventListener('click', resetPanelFilters);
+  els.filtersBtn.addEventListener('click', function () {
+    if (els.filterPanel.hidden) openFilterPanel(); else closeFilterPanel(false);
+  });
+  els.filterClose.addEventListener('click', function () { closeFilterPanel(true); });
+  // On click, not pointerdown: closing on pointerdown would hide the backdrop
+  // and let the same tap land on whatever tree card is underneath.
+  els.filterBackdrop.addEventListener('click', function () { closeFilterPanel(false); });
+  document.addEventListener('pointerdown', function (e) {
+    if (els.filterPanel.hidden) return;
+    var t = e.target;
+    if (els.filterPanel.contains(t) || els.filtersBtn.contains(t) || t === els.filterBackdrop) return;
+    closeFilterPanel(false);
+  });
+  window.addEventListener('resize', function () {
+    // Rotating a tablet can cross the phone breakpoint with the panel open.
+    if (!els.filterPanel.hidden) els.filterBackdrop.hidden = !narrowMQ.matches;
+    positionFilterPanel();
+  });
   els.resultsToggle.addEventListener('click', function () {
     setResultsCollapsed(!els.resultsPane.classList.contains('collapsed'));
   });

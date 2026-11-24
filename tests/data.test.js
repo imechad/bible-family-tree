@@ -373,6 +373,94 @@ test('search: comma lists match ANY term; prefixes carry over; attributes and no
   assert(all.every((r, i) => !r.reasons.length && (i === 0 || all[i - 1].person.generation <= r.person.generation)));
 });
 
+test('filters: age range bounds, blank = unbounded, unknown ages excluded, bounds applied as typed', () => {
+  const idx = Family.buildIndex(people);
+  const ids = (f) => Family.filterSearch(people, idx, '', Object.assign(Family.emptyFilters(), f)).map((r) => r.person.id);
+  const age = (id) => idx.byId.get(id).age;
+
+  // No filters: everyone, including people with no recorded age.
+  assert.strictEqual(ids({}).length, people.length);
+  // Both ends inclusive.
+  const range = ids({ ageMin: '60', ageMax: '70' });
+  assert(range.length && range.every((id) => age(id) >= 60 && age(id) <= 70));
+  assert(range.includes('tessaly-vell') && range.includes('ebbet-vell') === false, '70 is in, 71 is out');
+  assert(range.includes('lisska-arlo') && range.includes('dovrin-arlo'));
+  // One end only.
+  assert.deepStrictEqual(ids({ ageMin: '90' }).sort(), ['garrow-vell', 'isoline-ashby']);
+  assert.deepStrictEqual(ids({ ageMax: '9' }).sort(), ['briar-vell', 'wick-arlo']);
+  // Numbers work as well as the strings an <input> yields.
+  assert.deepStrictEqual(ids({ ageMin: 90 }).sort(), ['garrow-vell', 'isoline-ashby']);
+  // Unknown age can't be shown to be in range.
+  assert(!ids({ ageMin: '0' }).includes('pell-vell') && !ids({ ageMin: '0' }).includes('hale-arlo'));
+  assert.strictEqual(ids({ ageMin: '0' }).length, people.filter((p) => typeof p.age === 'number').length);
+  // Bounds are applied as typed (min above max matches nobody, not a swapped range).
+  assert.deepStrictEqual(ids({ ageMin: '70', ageMax: '60' }), []);
+  // Junk / half-typed input counts as no bound.
+  assert.strictEqual(ids({ ageMin: '-', ageMax: '' }).length, people.length);
+  // A range nobody is in yields nothing (the UI shows its empty state).
+  assert.deepStrictEqual(ids({ ageMin: '200' }), []);
+});
+
+test('filters: has notes / has children / has spouse match the derived data', () => {
+  const idx = Family.buildIndex(people);
+  const ids = (f) => Family.filterSearch(people, idx, '', Object.assign(Family.emptyFilters(), f)).map((r) => r.person.id).sort();
+  const expect = (pred) => people.filter(pred).map((p) => p.id).sort();
+
+  assert.deepStrictEqual(ids({ hasNotes: true }), expect((p) => Family.noteViews(p).length > 0));
+  assert(ids({ hasNotes: true }).includes('taddeo-vell') && !ids({ hasNotes: true }).includes('maelis-dunhart'));
+
+  // Children are derived (never stored), so the filter must use the index.
+  assert.deepStrictEqual(ids({ hasChildren: true }), expect((p) => idx.childrenOf.get(p.id).length > 0));
+  assert(ids({ hasChildren: true }).includes('pell-vell'), 'a single parent has children');
+  assert(!ids({ hasChildren: true }).includes('corwin-vell'), 'the childless couple has none');
+
+  assert.deepStrictEqual(ids({ hasSpouse: true }), expect((p) => idx.spousesOf.get(p.id).length > 0));
+  assert(ids({ hasSpouse: true }).includes('corwin-vell') && !ids({ hasSpouse: true }).includes('pell-vell'));
+
+  // A spouse recorded on only one side still counts for both (as the tree draws it).
+  const oneSided = [
+    { id: 'a', name: 'A', gender: 'female', generation: 1, age: null, mom: null, dad: null, spouses: ['b'], notes: [] },
+    { id: 'b', name: 'B', gender: 'male', generation: 1, age: null, mom: null, dad: null, spouses: [], notes: [{ text: 'x', refs: ['Genesis 1:1'] }] }
+  ];
+  const oIdx = Family.buildIndex(oneSided);
+  assert.deepStrictEqual(Family.filterSearch(oneSided, oIdx, '', { hasSpouse: true }).map((r) => r.person.id), ['a', 'b']);
+  assert.deepStrictEqual(Family.filterSearch(oneSided, oIdx, '', { hasNotes: true }).map((r) => r.person.id), ['b']);
+});
+
+test('filters combine with each other (AND) and with text search; badge count', () => {
+  const idx = Family.buildIndex(people);
+  const F = (f) => Object.assign(Family.emptyFilters(), f);
+  const ids = (q, f) => Family.filterSearch(people, idx, q, F(f)).map((r) => r.person.id);
+
+  // Every filter at once: gen 4 women aged 70+ with notes, children and a spouse.
+  assert.deepStrictEqual(ids('', { gen: '4', gender: 'female', ageMin: '70', hasNotes: true, hasChildren: true, hasSpouse: true }), ['wrenna-vell']);
+  // Gen + gender, exactly as the old dropdowns behaved.
+  const g4f = ids('', { gen: '4', gender: 'female' });
+  assert(g4f.length && g4f.every((id) => idx.byId.get(id).generation === 4 && idx.byId.get(id).gender === 'female'));
+  // AND, not OR: adding a filter can only shrink the set.
+  const kids = ids('', { hasChildren: true });
+  const kidsAndSpouse = ids('', { hasChildren: true, hasSpouse: true });
+  assert(kidsAndSpouse.length < kids.length && kidsAndSpouse.every((id) => kids.includes(id)));
+  assert(!kidsAndSpouse.includes('pell-vell') && !kidsAndSpouse.includes('corwin-vell'));
+
+  // Search keeps its order and match reasons; filters only drop people.
+  const plain = Family.search(people, idx, 'Briar, Wick');
+  const filtered = Family.filterSearch(people, idx, 'Briar, Wick', F({ hasNotes: true }));
+  assert.deepStrictEqual(filtered.map((r) => r.person.id), plain.filter((r) => Family.noteViews(r.person).length).map((r) => r.person.id));
+  assert(filtered.find((r) => r.person.id === 'briar-vell').reasons.some((x) => x.field === 'name'));
+  // A prefix search narrowed by a filter: Briar's parents who are male.
+  assert.deepStrictEqual(ids('kid:Briar', { gender: 'male' }), ['pim-vell']);
+  assert.deepStrictEqual(ids('kid:Briar', { gender: 'female' }), []);
+
+  // Badge: one per active filter; the age range counts once.
+  assert.strictEqual(Family.activeFilterCount(Family.emptyFilters()), 0);
+  assert.strictEqual(Family.activeFilterCount(F({ gen: '3' })), 1);
+  assert.strictEqual(Family.activeFilterCount(F({ ageMin: '10', ageMax: '20' })), 1);
+  assert.strictEqual(Family.activeFilterCount(F({ ageMax: '20' })), 1);
+  assert.strictEqual(Family.activeFilterCount(F({ ageMin: '-' })), 0, 'junk age is not an active filter');
+  assert.strictEqual(Family.activeFilterCount(F({ gen: '2', gender: 'male', ageMin: '1', hasNotes: true, hasChildren: true, hasSpouse: true })), 6);
+});
+
 test('multi-note people: each note keeps its own text, quotes, and linked refs', () => {
   const views = Family.noteViews({
     notes: [
@@ -465,6 +553,11 @@ test('server boots, serves the page, and /api/people returns the array', () => w
   assert.strictEqual(page.status, 200);
   assert.match(page.body, /MOCK DATA/);
   assert.match(page.body, /kid:/, 'search hint documenting the prefixes should be on the page');
+  // Generation/Gender live in the filter panel now, alongside the new filters.
+  for (const id of ['filters-btn', 'filters-badge', 'filter-panel', 'filter-gen', 'filter-gender', 'filter-age-min', 'filter-age-max',
+    'filter-has-notes', 'filter-has-children', 'filter-has-spouse', 'filter-reset', 'filter-close']) {
+    assert(page.body.includes(`id="${id}"`), `page should contain #${id}`);
+  }
   assert.strictEqual((await get(port, '/family.js')).status, 200);
   assert.strictEqual((await get(port, '/nope.txt')).status, 404);
   const escape = await get(port, '/..%2fdata%2fpeople.json');

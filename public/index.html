@@ -22,11 +22,29 @@
         </label>
         <small id="search-hint" class="search-hint" title="Typing a name also finds that person's parents, kids, spouses and siblings, and notes that mention it. Comma-separate several names to find anyone matching any of them.">Prefixes: <code>kid:</code> <code>mom:</code> <code>dad:</code> <code>spouse:</code> <code>sibling:</code> <code>gen:</code> <code>gender:</code> <code>age:</code> (e.g. <code>kid:Briar</code>). Plain names also find their parents, kids, spouses, siblings &amp; notes.</small>
       </div>
-      <label class="filter">
+      <button id="filters-btn" class="btn filters-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="filter-panel">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        <span>Filters</span><span id="filters-badge" class="filters-badge" hidden></span>
+      </button>
+      <button id="clear-filters" class="btn ghost" type="button" hidden>Clear</button>
+    </div>
+  </header>
+
+  <!-- Outside the top bar so it can be a fixed bottom sheet on phones without
+       its width feeding back into the top bar's wrapping. -->
+  <div id="filter-backdrop" class="filter-backdrop" hidden></div>
+  <section id="filter-panel" class="filter-panel" role="dialog" aria-modal="false" aria-labelledby="filter-title" hidden>
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <div class="fp-head">
+      <h2 id="filter-title">Filters</h2>
+      <button id="filter-close" class="btn ghost close" type="button" aria-label="Close filters">✕</button>
+    </div>
+    <div class="fp-body">
+      <label class="fp-field">
         <span>Generation</span>
         <select id="filter-gen"><option value="">All generations</option></select>
       </label>
-      <label class="filter">
+      <label class="fp-field">
         <span>Gender</span>
         <select id="filter-gender">
           <option value="">All genders</option>
@@ -34,9 +52,24 @@
           <option value="female">Female</option>
         </select>
       </label>
-      <button id="clear-filters" class="btn ghost" type="button" hidden>Clear</button>
+      <fieldset class="fp-field fp-age">
+        <legend>Age range</legend>
+        <label><span class="visually-hidden">Minimum age</span><input id="filter-age-min" type="number" inputmode="numeric" min="0" placeholder="min"></label>
+        <span aria-hidden="true">–</span>
+        <label><span class="visually-hidden">Maximum age</span><input id="filter-age-max" type="number" inputmode="numeric" min="0" placeholder="max"></label>
+      </fieldset>
+      <fieldset class="fp-field fp-toggles">
+        <legend>Show only people who…</legend>
+        <label class="fp-toggle"><input id="filter-has-notes" type="checkbox"> Has notes</label>
+        <label class="fp-toggle"><input id="filter-has-children" type="checkbox"> Has children</label>
+        <label class="fp-toggle"><input id="filter-has-spouse" type="checkbox"> Has spouse(s)</label>
+      </fieldset>
     </div>
-  </header>
+    <div class="fp-foot">
+      <span id="filter-count" class="fp-count" aria-live="polite"></span>
+      <button id="filter-reset" class="btn" type="button">Clear filters</button>
+    </div>
+  </section>
 
   <div id="data-warning" class="data-warning" hidden></div>
 
@@ -53,7 +86,7 @@
       <div class="legend" aria-label="Legend">
         <span class="lg lg-female">♀ mom, left · <i class="lg-swatch sw-mom"></i> pink line ↓</span>
         <span class="lg lg-male">♂ dad, right · <i class="lg-swatch sw-dad"></i> blue line ↓</span>
-        <span class="lg"><i class="lg-pill"></i> junction = their children fan out below</span>
+        <span class="lg"><i class="lg-pill"></i> junction · <i class="lg-swatch sw-child"></i> light line ↓ to each child</span>
         <span class="lg"><svg class="icon icon-info" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="7.6" r="1.45" fill="currentColor"/><rect x="10.85" y="10.4" width="2.3" height="7.4" rx="1.15" fill="currentColor"/></svg> has notes</span>
         <span class="lg">⧉ remarried, shown in each union</span>
       </div>

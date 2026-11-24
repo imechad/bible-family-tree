@@ -534,6 +534,60 @@
     });
   }
 
+  // ---------------------------------------------------------------- filters
+
+  /** Filter-panel state with nothing set. Blank strings (not null) for the
+   *  number inputs so the UI can round-trip whatever the user typed. */
+  function emptyFilters() {
+    return { gen: '', gender: '', ageMin: '', ageMax: '', hasNotes: false, hasChildren: false, hasSpouse: false };
+  }
+
+  // Blank or junk in a number box means "no bound" rather than "match
+  // nothing", so a half-typed "-" never empties the list.
+  function bound(v) {
+    if (v === '' || v === null || v === undefined) return null;
+    var n = Number(v);
+    return isFinite(n) ? n : null;
+  }
+
+  /** How many filters are on. Age range counts once however many ends are
+   *  set, because the badge answers "how many reasons is my list shorter". */
+  function activeFilterCount(f) {
+    if (!f) return 0;
+    return (f.gen !== '' && f.gen !== null && f.gen !== undefined ? 1 : 0) +
+      (f.gender ? 1 : 0) +
+      (bound(f.ageMin) !== null || bound(f.ageMax) !== null ? 1 : 0) +
+      (f.hasNotes ? 1 : 0) + (f.hasChildren ? 1 : 0) + (f.hasSpouse ? 1 : 0);
+  }
+
+  /** True when the person passes EVERY active filter (AND). */
+  function matchesFilters(p, index, f) {
+    if (!f) return true;
+    if (f.gen !== '' && f.gen !== null && f.gen !== undefined && p.generation !== Number(f.gen)) return false;
+    if (f.gender && p.gender !== f.gender) return false;
+    var lo = bound(f.ageMin), hi = bound(f.ageMax);
+    if (lo !== null || hi !== null) {
+      // Someone whose age scripture doesn't give can't be shown to be in
+      // range, so an age filter excludes them rather than guessing.
+      if (typeof p.age !== 'number' || !isFinite(p.age)) return false;
+      // Bounds apply as typed, never swapped: filtering is live, so swapping
+      // would make the list jump around while a min is still being typed.
+      if (lo !== null && p.age < lo) return false;
+      if (hi !== null && p.age > hi) return false;
+    }
+    // Same rule noteViews() uses, so the filter and the ⓘ icon never disagree.
+    if (f.hasNotes && !(Array.isArray(p.notes) && p.notes.some(function (n) { return n && typeof n.text === 'string'; }))) return false;
+    if (f.hasChildren && !((index.childrenOf.get(p.id) || []).length)) return false;
+    if (f.hasSpouse && !((index.spousesOf.get(p.id) || []).length)) return false;
+    return true;
+  }
+
+  /** Text search narrowed by the filter panel; keeps search()'s order and
+   *  match reasons untouched. */
+  function filterSearch(people, index, query, filters) {
+    return search(people, index, query).filter(function (m) { return matchesFilters(m.person, index, filters); });
+  }
+
   return {
     BOOKS: BOOKS,
     isValidRef: isValidRef,
@@ -547,6 +601,10 @@
     noteViews: noteViews,
     fold: fold,
     parseQuery: parseQuery,
-    search: search
+    search: search,
+    emptyFilters: emptyFilters,
+    activeFilterCount: activeFilterCount,
+    matchesFilters: matchesFilters,
+    filterSearch: filterSearch
   };
 });
