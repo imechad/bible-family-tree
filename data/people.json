@@ -1,0 +1,380 @@
+[
+  {
+    "id": "garrow-vell",
+    "name": "Garrow Vell",
+    "gender": "male",
+    "generation": 1,
+    "age": 96,
+    "mom": null,
+    "dad": null,
+    "notes": [
+      {
+        "text": "DEMO NOTE: In this invented family saga, Garrow is the founder of the Vell house and is said to have planted the first orchard on the hill farm. The verse below is attached only to show how a quoted citation renders.",
+        "quotes": [
+          { "ref": "Genesis 1:11", "text": "And God said, Let the earth bring forth grass, the herb yielding seed, and the fruit tree yielding fruit after his kind, whose seed is in itself, upon the earth: and it was so." }
+        ],
+        "refs": ["Genesis 1:11"]
+      },
+      {
+        "text": "DEMO NOTE: A second note with two references and no quote, to show a note can cite several passages (compare Genesis 2:15 with Genesis 8:22).",
+        "refs": ["Genesis 2:15", "Genesis 8:22"]
+      }
+    ]
+  },
+  {
+    "id": "isoline-ashby",
+    "name": "Isoline Ashby",
+    "gender": "female",
+    "generation": 1,
+    "age": 91,
+    "mom": null,
+    "dad": null,
+    "notes": [
+      {
+        "text": "DEMO NOTE: Fictional matriarch of the demo family. The made-up story says she kept the household ledger and named every grandchild.",
+        "quotes": [
+          { "ref": "Genesis 1:28", "text": "And God blessed them, and God said unto them, Be fruitful, and multiply, and replenish the earth, and subdue it: and have dominion over the fish of the sea, and over the fowl of the air, and over every living thing that moveth upon the earth." }
+        ],
+        "refs": ["Genesis 1:28"]
+      }
+    ]
+  },
+  {
+    "id": "bram-vell",
+    "name": "Bram Vell",
+    "gender": "male",
+    "generation": 2,
+    "age": 78,
+    "mom": "isoline-ashby",
+    "dad": "garrow-vell",
+    "notes": [
+      {
+        "text": "DEMO NOTE: Eldest son in the mock dynasty. This note shows a verse range citation.",
+        "quotes": [
+          { "ref": "Genesis 2:24", "text": "Therefore shall a man leave his father and his mother, and shall cleave unto his wife: and they shall be one flesh." }
+        ],
+        "refs": ["Genesis 2:24", "Genesis 2:18-25"]
+      }
+    ]
+  },
+  {
+    "id": "maelis-dunhart",
+    "name": "Maelis Dunhart",
+    "gender": "female",
+    "generation": 2,
+    "age": 82,
+    "mom": null,
+    "dad": null,
+    "notes": []
+  },
+  {
+    "id": "tessaly-vell",
+    "name": "Tessaly Vell",
+    "gender": "female",
+    "generation": 2,
+    "age": 70,
+    "mom": "isoline-ashby",
+    "dad": "garrow-vell",
+    "notes": [
+      {
+        "text": "DEMO NOTE: In the invented story Tessaly raised her daughter alone after leaving for the coast. The father is deliberately left unrecorded to demo an empty Dad field.",
+        "refs": ["Genesis 1:3"]
+      }
+    ]
+  },
+  {
+    "id": "corwin-vell",
+    "name": "Corwin Vell",
+    "gender": "male",
+    "generation": 2,
+    "age": 66,
+    "mom": "isoline-ashby",
+    "dad": "garrow-vell",
+    "notes": [
+      {
+        "text": "DEMO NOTE: Childless in the demo data, to show an empty Children field. The made-up tale says he spent his life mapping the night sky.",
+        "quotes": [
+          { "ref": "Genesis 1:16", "text": "And God made two great lights; the greater light to rule the day, and the lesser light to rule the night: he made the stars also." }
+        ],
+        "refs": ["Genesis 1:16"]
+      }
+    ]
+  },
+  {
+    "id": "ebbet-vell",
+    "name": "Ebbet Vell",
+    "gender": "male",
+    "generation": 3,
+    "age": 71,
+    "mom": "maelis-dunhart",
+    "dad": "bram-vell",
+    "notes": []
+  },
+  {
+    "id": "ysolde-marrick",
+    "name": "Ysolde Marrick",
+    "gender": "female",
+    "generation": 3,
+    "age": 69,
+    "mom": null,
+    "dad": null,
+    "notes": []
+  },
+  {
+    "id": "nyra-vell",
+    "name": "Nyra Vell",
+    "gender": "female",
+    "generation": 3,
+    "age": 64,
+    "mom": "maelis-dunhart",
+    "dad": "bram-vell",
+    "notes": []
+  },
+  {
+    "id": "pell-vell",
+    "name": "Pell Vell",
+    "gender": "male",
+    "generation": 3,
+    "age": null,
+    "mom": "maelis-dunhart",
+    "dad": "bram-vell",
+    "notes": []
+  },
+  {
+    "id": "quillon-vell",
+    "name": "Quillon Vell",
+    "gender": "male",
+    "generation": 3,
+    "age": 39,
+    "mom": "maelis-dunhart",
+    "dad": "bram-vell",
+    "notes": []
+  },
+  {
+    "id": "rowen-vell",
+    "name": "Rowen Vell",
+    "gender": "female",
+    "generation": 3,
+    "age": 58,
+    "mom": "tessaly-vell",
+    "dad": null,
+    "notes": [
+      {
+        "text": "DEMO NOTE: Only child of a single mother in the mock data. Her son is also listed with no recorded father, so the pattern repeats two generations running.",
+        "refs": ["Genesis 1:31"]
+      }
+    ]
+  },
+  {
+    "id": "taddeo-vell",
+    "name": "Taddeo Vell",
+    "gender": "male",
+    "generation": 4,
+    "age": 80,
+    "mom": "ysolde-marrick",
+    "dad": "ebbet-vell",
+    "notes": []
+  },
+  {
+    "id": "cassia-holloway",
+    "name": "Cassia Holloway",
+    "gender": "female",
+    "generation": 4,
+    "age": 75,
+    "mom": null,
+    "dad": null,
+    "notes": []
+  },
+  {
+    "id": "wrenna-vell",
+    "name": "Wrenna Vell",
+    "gender": "female",
+    "generation": 4,
+    "age": 77,
+    "mom": "ysolde-marrick",
+    "dad": "ebbet-vell",
+    "notes": [
+      {
+        "text": "DEMO NOTE: The invented story has Wrenna marry into the Arlo family, which is why her children carry a different surname. Cited verse is decorative, see Genesis 9:13.",
+        "quotes": [
+          { "ref": "Genesis 9:13", "text": "I do set my bow in the cloud, and it shall be for a token of a covenant between me and the earth." }
+        ],
+        "refs": ["Genesis 9:13"]
+      }
+    ]
+  },
+  {
+    "id": "fenwick-arlo",
+    "name": "Fenwick Arlo",
+    "gender": "male",
+    "generation": 4,
+    "age": 72,
+    "mom": null,
+    "dad": null,
+    "notes": []
+  },
+  {
+    "id": "ozric-vell",
+    "name": "Ozric Vell",
+    "gender": "male",
+    "generation": 4,
+    "age": 55,
+    "mom": "rowen-vell",
+    "dad": null,
+    "notes": []
+  },
+  {
+    "id": "merrit-vell",
+    "name": "Merrit Vell",
+    "gender": "female",
+    "generation": 4,
+    "age": 61,
+    "mom": null,
+    "dad": "pell-vell",
+    "notes": [
+      {
+        "text": "DEMO NOTE: Raised by her father alone in the made-up saga, so her Mom field is empty. This is the mirror image of the single-mother case.",
+        "quotes": [
+          { "ref": "Genesis 11:1", "text": "And the whole earth was of one language, and of one speech." }
+        ],
+        "refs": ["Genesis 11:1"]
+      }
+    ]
+  },
+  {
+    "id": "brisk-vell",
+    "name": "Brisk Vell",
+    "gender": "male",
+    "generation": 5,
+    "age": 49,
+    "mom": "cassia-holloway",
+    "dad": "taddeo-vell",
+    "notes": []
+  },
+  {
+    "id": "sorrel-vell",
+    "name": "Sorrel Vell",
+    "gender": "female",
+    "generation": 5,
+    "age": 52,
+    "mom": "cassia-holloway",
+    "dad": "taddeo-vell",
+    "notes": []
+  },
+  {
+    "id": "lisska-arlo",
+    "name": "Lisska Arlo",
+    "gender": "female",
+    "generation": 5,
+    "age": 68,
+    "mom": "wrenna-vell",
+    "dad": "fenwick-arlo",
+    "notes": [
+      {
+        "text": "DEMO NOTE: Eldest of three full siblings in the demo data. The fictional story says she dreamed of a staircase to the stars the night her daughter was born.",
+        "quotes": [
+          { "ref": "Genesis 28:12", "text": "And he dreamed, and behold a ladder set up on the earth, and the top of it reached to heaven: and behold the angels of God ascending and descending on it." }
+        ],
+        "refs": ["Genesis 28:12"]
+      }
+    ]
+  },
+  {
+    "id": "dovrin-arlo",
+    "name": "Dovrin Arlo",
+    "gender": "male",
+    "generation": 5,
+    "age": 63,
+    "mom": "wrenna-vell",
+    "dad": "fenwick-arlo",
+    "notes": []
+  },
+  {
+    "id": "hale-arlo",
+    "name": "Hale Arlo",
+    "gender": "male",
+    "generation": 5,
+    "age": null,
+    "mom": "wrenna-vell",
+    "dad": "fenwick-arlo",
+    "notes": []
+  },
+  {
+    "id": "juniver-vell",
+    "name": "Juniver Vell",
+    "gender": "female",
+    "generation": 5,
+    "age": 40,
+    "mom": "merrit-vell",
+    "dad": null,
+    "notes": []
+  },
+  {
+    "id": "kestrel-arlo",
+    "name": "Kestrel Arlo",
+    "gender": "male",
+    "generation": 6,
+    "age": 41,
+    "mom": "lisska-arlo",
+    "dad": null,
+    "notes": []
+  },
+  {
+    "id": "thistle-arlo",
+    "name": "Thistle Arlo",
+    "gender": "female",
+    "generation": 6,
+    "age": 44,
+    "mom": "lisska-arlo",
+    "dad": null,
+    "notes": []
+  },
+  {
+    "id": "pim-vell",
+    "name": "Pim Vell",
+    "gender": "male",
+    "generation": 6,
+    "age": 30,
+    "mom": null,
+    "dad": "brisk-vell",
+    "notes": []
+  },
+  {
+    "id": "lark-vell",
+    "name": "Lark Vell",
+    "gender": "female",
+    "generation": 6,
+    "age": 28,
+    "mom": null,
+    "dad": "brisk-vell",
+    "notes": []
+  },
+  {
+    "id": "wick-arlo",
+    "name": "Wick Arlo",
+    "gender": "male",
+    "generation": 7,
+    "age": 9,
+    "mom": "thistle-arlo",
+    "dad": null,
+    "notes": []
+  },
+  {
+    "id": "briar-vell",
+    "name": "Briar Vell",
+    "gender": "female",
+    "generation": 7,
+    "age": 6,
+    "mom": null,
+    "dad": "pim-vell",
+    "notes": [
+      {
+        "text": "DEMO NOTE: Youngest person in the mock tree (generation 7). Present only to prove the layout handles a deep family line.",
+        "quotes": [
+          { "ref": "Genesis 1:1", "text": "In the beginning God created the heaven and the earth." }
+        ],
+        "refs": ["Genesis 1:1"]
+      }
+    ]
+  }
+]

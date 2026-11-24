@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#11141a">
+  <title>Bible Family Tree Explorer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="mock-banner" role="note">
+    <strong>MOCK DATA</strong> — demo family. Real Bible characters come in phase 2.
+  </div>
+
+  <header class="topbar">
+    <h1>Bible Family Tree Explorer</h1>
+    <div class="controls" role="search">
+      <label class="search">
+        <span class="visually-hidden">Search names</span>
+        <input id="search" type="search" placeholder="Search names…" autocomplete="off" spellcheck="false">
+      </label>
+      <label class="filter">
+        <span>Generation</span>
+        <select id="filter-gen"><option value="">All generations</option></select>
+      </label>
+      <label class="filter">
+        <span>Gender</span>
+        <select id="filter-gender">
+          <option value="">All genders</option>
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+        </select>
+      </label>
+      <button id="clear-filters" class="btn ghost" type="button" hidden>Clear</button>
+    </div>
+  </header>
+
+  <div id="data-warning" class="data-warning" hidden></div>
+
+  <main class="layout">
+    <aside id="results-pane" class="results-pane" aria-label="Search results">
+      <div class="results-head">
+        <span id="results-count">Loading…</span>
+        <button id="results-toggle" class="btn ghost small" type="button" aria-expanded="true">Hide</button>
+      </div>
+      <ul id="results" class="results"></ul>
+    </aside>
+
+    <section class="tree-pane" aria-label="Family tree">
+      <div class="zoom-controls">
+        <button class="btn small" type="button" data-zoom="out" aria-label="Zoom out">−</button>
+        <button class="btn small" type="button" data-zoom="reset" aria-label="Reset zoom">100%</button>
+        <button class="btn small" type="button" data-zoom="in" aria-label="Zoom in">+</button>
+      </div>
+      <div id="viewport" class="viewport" tabindex="0">
+        <div id="sizer" class="sizer">
+          <div id="canvas" class="canvas">
+            <svg id="links" class="links" aria-hidden="true"></svg>
+            <div id="nodes"></div>
+          </div>
+        </div>
+      </div>
+      <div id="status" class="status" hidden></div>
+    </section>
+
+    <aside id="detail" class="detail" aria-label="Person details" hidden>
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <button id="detail-close" class="btn ghost close" type="button" aria-label="Close details">✕</button>
+      <div id="detail-body"></div>
+    </aside>
+  </main>
+
+  <script src="family.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
