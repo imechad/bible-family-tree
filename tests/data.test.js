@@ -857,6 +857,72 @@ test('filter rows AND together; blank rows inert; rowIsActive mirrors inertness'
   }
 });
 
+// ------------------------------------------------------------------ same-named people
+
+// Same-named people are distinct individuals: every link is by id, never by name.
+const SP = (id, name, gender, extra) => Object.assign(
+  { id, name, gender, generation: 1, age: 40, mom: 'unknown', dad: 'unknown', spouses: [], notes: [] }, extra);
+const sameNameRows = (list, rows) => Family.filterByRows(list, Family.buildIndex(list), rows).map((p) => p.id);
+
+test('same name: byName is a multi-map holding every same-named person in data order', () => {
+  const list = [SP('mary-a', 'Mary Vell', 'female'), SP('other', 'Other', 'male'), SP('mary-b', 'mary vell', 'female')];
+  const idx = Family.buildIndex(list);
+  const marys = idx.byName.get('mary vell');
+  assert(Array.isArray(marys), 'byName values are arrays, not single people');
+  assert.deepStrictEqual(marys.map((p) => p.id), ['mary-a', 'mary-b'], 'both kept, first to last in data order');
+  assert(idx.byName.get('other').length === 1 && idx.byName.get('other')[0].id === 'other', 'unique names are length-1 arrays');
+  assert(idx.byId.has('mary-a') && idx.byId.has('mary-b'));
+  assert.deepStrictEqual(Object.keys(idx).sort(), ['byId', 'byName', 'childrenOf', 'problems', 'siblingsOf', 'spousesOf']);
+  // Nameless synthetic fixtures are still skipped.
+  assert.strictEqual(Family.buildIndex([{ id: 'x' }]).byName.size, 0);
+});
+
+test('same name: a married Mary with a child and a single Mary with a note stay separate', () => {
+  const list = [
+    SP('mary-a', 'Mary Vell', 'female', { spouses: ['john-a'] }),
+    SP('john-a', 'John Vell', 'male', { spouses: ['mary-a'] }),
+    SP('mary-b', 'Mary Vell', 'female', { notes: [{ text: 'The other Mary.', refs: ['John 19:25'] }] }),
+    SP('kid-a', 'Kid Vell', 'male', { generation: 2, age: 10, mom: 'mary-a', dad: 'john-a' })
+  ];
+  assert.deepStrictEqual(Family.validate(list), [], 'duplicate names are allowed');
+  const idx = Family.buildIndex(list);
+  const fb = Family.deriveUnions(idx);
+  assert.deepStrictEqual(fb.unions.map((u) => `${u.key}:${u.children.join(',')}`), ['mary-a|john-a:kid-a']);
+  assert.deepStrictEqual(idx.childrenOf.get('mary-a'), ['kid-a']);
+  assert.deepStrictEqual(idx.childrenOf.get('mary-b') || [], [], 'the single Mary has no children');
+  assert.deepStrictEqual(idx.spousesOf.get('mary-a'), ['john-a']);
+  assert.deepStrictEqual(idx.spousesOf.get('mary-b') || [], []);
+  const found = Family.search(list, idx, 'mary').map((r) => r.person.id);
+  assert(found.includes('mary-a') && found.includes('mary-b'), `search finds both Marys: ${found}`);
+  assert.deepStrictEqual(sameNameRows(list, [R('name', null, 'mary')]), ['mary-a', 'mary-b']);
+  assert.deepStrictEqual(sameNameRows(list, [R('mom', null, 'mary')]), ['kid-a'], 'mom resolves by id, not name');
+  assert.deepStrictEqual(sameNameRows(list, [R('notes', 'hasNote')]), ['mary-b']);
+  assert.deepStrictEqual(sameNameRows(list, [R('child', 'amount', '1'), R('name', null, 'mary')]), ['mary-a']);
+});
+
+test('same name: two same-named sisters (same mom, dad, generation) are two people', () => {
+  const list = [
+    SP('ma', 'Anna Vell', 'female', { spouses: ['pa'] }),
+    SP('pa', 'Joachim Vell', 'male', { spouses: ['ma'] }),
+    SP('mary-1', 'Mary Vell', 'female', { generation: 2, age: 20, mom: 'ma', dad: 'pa' }),
+    SP('mary-2', 'Mary Vell', 'female', { generation: 2, age: 18, mom: 'ma', dad: 'pa' })
+  ];
+  assert.deepStrictEqual(Family.validate(list), [], 'same-named siblings are accepted');
+  const idx = Family.buildIndex(list);
+  const fb = Family.deriveUnions(idx);
+  assert.deepStrictEqual(fb.byKey.get('ma|pa').children, ['mary-1', 'mary-2'], 'both children, in data order');
+  assert.deepStrictEqual(idx.siblingsOf.get('mary-1'), [{ id: 'mary-2', kind: 'full' }]);
+  assert.deepStrictEqual(idx.siblingsOf.get('mary-2'), [{ id: 'mary-1', kind: 'full' }]);
+  assert.deepStrictEqual(idx.byName.get('mary vell').map((p) => p.id), ['mary-1', 'mary-2']);
+  assert.deepStrictEqual(sameNameRows(list, [R('child', 'amount', '2')]), ['ma', 'pa'], 'both sisters count as children');
+  assert.deepStrictEqual(sameNameRows(list, [R('child', 'name', 'mary')]), ['ma', 'pa'], 'child-name matches the parents');
+  assert.deepStrictEqual(sameNameRows(list, [R('mom', null, 'anna')]), ['mary-1', 'mary-2']);
+  assert.deepStrictEqual(sameNameRows(list, [R('dad', null, 'joachim')]), ['mary-1', 'mary-2']);
+  assert.deepStrictEqual(sameNameRows(list, [R('sibling', 'name', 'mary')]), ['mary-1', 'mary-2'], 'each is the other\'s sibling');
+  const found = Family.search(list, idx, 'mary').map((r) => r.person.id);
+  assert(found.includes('mary-1') && found.includes('mary-2'));
+});
+
 test('server boots, serves the page, and /api/people returns the array', () => withServer({}, async (port) => {
   const api = await get(port, '/api/people');
   assert.strictEqual(api.status, 200);

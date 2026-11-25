@@ -151,15 +151,17 @@
       siblingsOf.set(p.id, Array.from(seen, function (e) { return { id: e[0], kind: e[1] }; }));
     });
 
-    // Lowercased display name -> person, for the filter builder's name lookups
-    // ("children includes Briar" resolves the name to a person first). First
-    // occurrence wins if two people share a name.
+    // Lowercased display name -> array of EVERY person with that name, first
+    // to last in data order. Same-named people are distinct individuals (all
+    // links are by id), so none of them may be dropped from the lookup.
     var byName = new Map();
     byId.forEach(function (p) {
       // Synthetic test fixtures may lack a name — skip them.
       if (typeof p.name !== 'string' || !p.name) return;
       var key = p.name.toLowerCase();
-      if (!byName.has(key)) byName.set(key, p);
+      var list = byName.get(key);
+      if (list) list.push(p);
+      else byName.set(key, [p]);
     });
     return { byId: byId, byName: byName, childrenOf: childrenOf, siblingsOf: siblingsOf, spousesOf: spousesOf, problems: problems };
   }

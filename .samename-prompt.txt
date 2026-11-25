@@ -1,0 +1,108 @@
+# FEATURE: same-named people must be fully distinct individuals
+
+Repo: /home/imebored/bible-family-tree (family tree web app, phase 1 = mock data).
+Upcoming phase 2 loads real Bible characters, where many people share a name
+(several Marys, several Jameses, multiple Herods). The owner's requirement:
+two people with the same name are TWO DIFFERENT PEOPLE everywhere — separate
+cards, separate details, both searchable, both filterable, correct relationships.
+
+Do NOT git commit/push — the orchestrator reviews, verifies in a browser, and
+lands this through a pull request. Do NOT touch server.js or data/people.json
+(the visible mock family must not change).
+
+## Test command (custom zero-dep harness — NOT node --test)
+
+    node tests/data.test.js
+
+Currently 40/40 green. Your run must end with ALL green plus your new tests.
+
+## What is ALREADY verified id-keyed (do not regress; a repro was run)
+
+With a synthetic family containing two people BOTH named "Mary Vell" (ids
+mary-a married with a kid, mary-b single with a note), these all behave
+correctly today:
+- validate() reports no problems (duplicate names allowed — keep it that way)
+- deriveUnions: unions keyed by member ids; mary-a|john-a union with kid-a
+- childrenOf / siblingsOf / spousesOf: correct per id
+- search(people, index, 'mary'): returns BOTH marys
+- filterByRows: name-contains returns both; mom-contains resolves via the
+  mom ID (kid-a matched); child amount / notes / gender all correct
+
+The single defect is in buildIndex.
+
+## THE FIX — buildIndex's byName map (public/family.js, block at ~lines 155-165)
+
+Today:
+
+    var byName = new Map();
+    byId.forEach(function (p) {
+      if (typeof p.name !== 'string' || !p.name) return; // synthetic fixtures
+      var key = p.name.toLowerCase();
+      if (!byName.has(key)) byName.set(key, p);   // FIRST ONE WINS — later
+                                                  // same-named people vanish
+    });
+
+Change byName to a MULTI-MAP: Map<lowercasedName, Array<person>> containing
+EVERY person with that name, in data file order. Keep skipping nameless
+synthetic fixtures. Update the comment above it to say the map holds all
+same-named people (first-to-last in data order) because same-named people are
+distinct individuals. Nothing else in app.js or family.js reads byName today
+(verified — zero consumers), so this is a self-contained change, but keep the
+exported index shape otherwise identical ({ byId, byName, childrenOf,
+siblingsOf, spousesOf, problems }).
+
+Do NOT add any name-based disambiguation UI, name suffixes, or auto-renaming —
+the owner did not ask for that. Distinctness is the requirement, not relabeling.
+
+## Script cache-busting (public/index.html, bottom)
+
+index.html loads:
+    <script src="family.js"></script>
+    <script src="app.js?v=4"></script>
+family.js has NO version param, so browsers can serve a stale engine after
+updates. Change both lines to a shared bumped version:
+    <script src="family.js?v=6"></script>
+    <script src="app.js?v=6"></script>
+
+## Tests (tests/data.test.js — same custom harness style as the file)
+
+Add a same-name battery using synthetic fixtures (do NOT edit data/people.json):
+1. Two people named identically ("Mary Vell"), different ids: buildIndex gives
+   byName.get('mary vell') as an array of length 2 in data order; byId has both.
+2. One married Mary with a child, one single Mary with a note (the repro shape):
+   - validate() reports no problems
+   - deriveUnions(index).unions has exactly the mary-a|john-a union
+   - childrenOf/spousesOf correct per id; the single Mary has no children
+   - search(people, index, 'mary') includes both ids
+   - filterByRows name-contains 'mary' returns both
+   - filterByRows mom-contains 'mary' returns her child only
+3. The hard case: TWO same-named SIBLINGS (same mom AND dad, same generation,
+   e.g. two sisters both named "Mary Vell"): validate() accepts them; the
+   union's children array contains both ids in order; siblingsOf lists each
+   other; filterByRows child-amount 2 on the parent matches; child-name
+   contains 'mary' matches the PARENT (the person whose child is named Mary),
+   and parent-name contains matches both siblings.
+Also add a unit assertion documenting the byName multi-map shape (array, not
+single person), and keep every existing test green.
+
+## README (one short addition)
+
+In "## Data: data/people.json" section, add 1-2 sentences: people with the same
+name are fully supported and stay distinct individuals — every link (mom, dad,
+spouses) is by id, never by name; when two people share a name, give them
+fuller display names (e.g. "Mary, wife of Clopas" vs "Mary Magdalene") so cards
+are easy to tell apart at a glance. Keep it terse and in the file's voice.
+
+## Style constraints
+
+- family.js is ES5-flavored (var/function) — match its local style exactly.
+- No frameworks, no build step, no new dependencies.
+- Do not rename any exported family.js function.
+- Run `node tests/data.test.js` at the end; report the final count.
+
+## Definition of done
+
+All tests green (40 existing + your new ones), README updated, index.html
+script tags versioned at ?v=6 for BOTH scripts, and a short self-report:
+files changed, tests added (count), confirmation that data/people.json and
+server.js are untouched.

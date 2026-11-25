@@ -128,6 +128,11 @@ Children, siblings and unions (each drawn with its own junction) are computed wh
 is written once, on the child. A marriage is written on **both** spouses, so either
 record reads correctly on its own, and the test checks that the two sides agree.
 
+People with the same name are fully supported and stay distinct individuals: every
+link (`mom`, `dad`, `spouses`) is by id, never by name. When two people share a name,
+give them fuller display names (e.g. `"Mary, wife of Clopas"` vs `"Mary Magdalene"`)
+so their cards are easy to tell apart at a glance.
+
 ### Person shape
 
 | field        | type                          | notes |
