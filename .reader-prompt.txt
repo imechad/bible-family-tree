@@ -1,0 +1,145 @@
+# FEATURE: first-mention field + in-app KJV reader with tappable name highlights (v1.7.0)
+
+Repo: /home/imebored/bible-family-tree. Phase 2 has BEGUN (owner's decision): real Bible
+people now live alongside the mock Vell family. Do NOT git commit/push — the orchestrator
+verifies in a browser and lands this through a pull request.
+
+## Test command (custom zero-dep harness — NOT node --test)
+
+    node tests/data.test.js
+
+Currently 43/43 green. NOTE: your FIRST step is to run it and see failures — the
+orchestrator has already added the Genesis seed data (below) and the KJV book files, so
+the people-count test and the validator's missing-firstMention checks will fail until
+your code lands. That is the expected baseline; end state is ALL green (43 existing
+updated + your new ones).
+
+## Already done by the orchestrator (do NOT redo, do NOT regenerate)
+
+1. KJV text: public/kjv/<slug>.json — 66 files, one per book, format
+   {"book":"Genesis","chapters":[["verse 1","verse 2",...],...]} (verse number = index+1),
+   plus public/kjv/index.json ([{"book","slug","chapters"},...]). 31,102 verses total,
+   verified against known verses (Genesis 1:1, John 3:16, Psalm 119 = 176 verses).
+   The server already serves these statically (anything under public/ is served) —
+   server.js needs NO changes. Source was the public-domain thiagobodruk/bible KJV.
+2. Nothing else — people.json, validator, app.js are untouched so far.
+
+## TASK A — the firstMention field (required on every person)
+
+- New required field "firstMention": a SINGLE Bible verse reference, e.g. "Genesis 2:19".
+  "First mention" means the first verse where the person is directly named — not an
+  inference ("the man", "his wife") but the name stated. Ranges ("Genesis 1:1-2") and
+  multi-refs are INVALID here; exactly one verse.
+- validate(): reject missing/empty firstMention, invalid refs (reuse the existing
+  BOOKS/isValidRef machinery so book spellings stay consistent), and ranges/multi-refs.
+  Existing valid single refs stay accepted (notes' refs validation shows the pattern).
+- Mock Vells (34 people): assign each a real Genesis verse as a DEMO placeholder (their
+  invented names never occur in scripture; README says so). Spread them across
+  Genesis 4-11 roughly in data order (earlier generations -> earlier chapters) so the
+  demo reads sensibly. Every person gets one; the field is always filled.
+- Genesis seed (ALREADY IN data/people.json — verify, don't rewrite): adam, eve, cain,
+  abel, seth with firstMention "Genesis 2:19" / "Genesis 3:20" / "Genesis 4:1" /
+  "Genesis 4:2" / "Genesis 4:25" — these are REAL (verified in the KJV text: 2:19 is
+  where "Adam" is first named, 3:20 "called his wife's name Eve", 4:1 "bare Cain",
+  4:2 "his brother Abel", 4:25 "called his name Seth").
+- Update the people-count test (34 -> 39) and any test that assumes only Vells exist.
+- index.html banner copy: it currently says the mock family's people aren't Bible
+  characters — update to say the Vell family is the invented demo while Adam's family
+  (Genesis 2-5) is the first real data; the rest of scripture arrives through phase 2.
+  README's "Phase 1 — MOCK DATA" warning block gets the same treatment (call it phase 1.5
+  or reword; keep the warning spirit: Vells are invented, their firstMention values are
+  demo placeholders).
+
+## TASK B — the KJV reader
+
+- Top bar gains a "Bible" button next to "Filters" (same button styles). It opens a
+  reader panel: same overlay/sheet pattern as the filter panel (drops down on desktop,
+  full-screen bottom sheet on phones, Escape/backdrop/✕ to close).
+- Header controls: book dropdown (66 books, canonical order, from /kjv/index.json),
+  chapter stepper (prev / "Genesis 2" / next), ✕ close.
+- Body: the chapter's verses as flowing text, each verse preceded by a small verse
+  number. Fetch /kjv/<slug>.json lazily on first open of a book and cache in memory
+  (slug map comes from index.json; ref book names like "1 Samuel" must map to
+  "1-samuel" — reuse family.js's existing BOOKS/ref-parsing so spellings agree).
+- Deep link: #read=Genesis+2 opens the reader at Genesis 2; #read=Genesis+2:19 also
+  scrolls that verse into view and briefly marks it. Opening the reader sets the hash;
+  closing clears it. Coexists with the existing #person= routing (never both at once:
+  opening the reader clears a person hash and vice versa).
+
+## TASK C — name highlighting + tap-to-tree, with the repeated-name rule
+
+For each verse, find occurrences of documented names (people from people.json):
+- Match the person's display name as a case-insensitive whole phrase with word
+  boundaries ("Adam" matches "Adam" and "Adam's", never "adament"; "Garrow Vell" only
+  as the adjacent phrase). When names overlap, the longest match wins.
+- Resolve each occurrence to exactly ONE person, in this order:
+  1. Only one documented person has that name -> that person.
+  2. Several share the name: if this exact verse ref IS one of their firstMention
+     values (and exactly one person claims it), that person is the one addressed —
+     a first-mention verse by definition names its person.
+  3. Several share the name and it's a later verse: consult an optional
+     data/mentions.json — {"<Book C:V>": {"<display name>": "<person id>"}, ...} —
+     the phase-2 data-entry contract for repeated names. If the file exists, the node
+     validator cross-checks its person ids and refs; the app fetches it once at boot
+     (absent file = fine, treated as empty).
+  4. Still ambiguous: DO NOT highlight the occurrence — render it as plain text.
+     NEVER navigate to "just anyone with that name". Wrong-person navigation is worse
+     than no navigation; the data contract (3) is how phase-2 entry resolves repeats.
+- Implement the resolution as pure, unit-testable functions in family.js (ES5 style),
+  exposed on the Family export (e.g. findNameOccurrences(verseText, index, verseRef,
+  overrides) -> [{start, end, text, person}]), used by app.js for rendering.
+- Tapping a highlighted name: close the reader, then reuse the EXISTING select-a-person
+  flow (same as tapping a search result): highlight the person's card, scroll it into
+  view, open their detail panel, set #person=<id>.
+
+## TASK D — first mention shown on the person
+
+Detail panel gains a "First mention" row: the ref, linked two ways — the existing
+BibleGateway link (bibleUrl) and a second link that opens the reader at that exact
+verse (#read=Book+C:V).
+
+## TASK E — tests (same custom harness style)
+
+- KJV data: index.json lists 66 books; genesis.json parses with 50 chapters, 31 verses
+  in chapter 1; spot texts (Genesis 1:1, John 3:16 via john.json); every index entry's
+  file exists and parses.
+- firstMention validation: missing/empty rejected; "Genesis 1:1-2" (range) rejected;
+  bogus book rejected; valid single refs accepted; every person in data/people.json
+  passes (this covers all 34 demo refs + 5 real ones).
+- Resolution pipeline (pure functions, synthetic index — no fetch): unique name resolves;
+  repeated name at a firstMention verse anchors to that person; repeated name with a
+  mentions override resolves to the override; repeated ambiguous name with no override
+  yields NO occurrence (plain text, not a guess); longest-name-wins on overlap;
+  word-boundary safety ("Adam" vs a word merely containing "adam").
+- Genesis seed facts: 39 people total; the five ids exist with their exact firstMention
+  refs; Adam age 930, Eve age 'unknown'; cain/abel/seth have mom 'eve' dad 'adam';
+  cain/abel/seth spousesState and childrenState are 'unknown' (scripture doesn't settle
+  their marriage/children status in the seeded set); the adam|eve union has the three
+  sons; validate() reports no problems.
+- All 43 existing tests still green (update the count test and any copy-dependent ones).
+
+## TASK F — README
+
+- Person-shape table: add firstMention (type: single verse ref; always filled; first
+  verse where the name is STATED, not inferred; demo placeholders on the mock family).
+- New "## Reading the Bible" section: the Bible button, book/chapter nav, deep links,
+  how highlighting resolves names (unique -> first-mention verse -> mentions.json ->
+  plain text if still ambiguous — never a guess), and the data/mentions.json contract
+  for phase-2 repeated-name entry with a copy-paste example.
+- Update the phase warning block (see TASK A).
+- KJV attribution: public-domain KJV text, source repo noted (thiagobodruk/bible).
+
+## Style constraints
+
+- family.js = ES5 (var/function); app.js = match its existing mixed style. No
+  frameworks, no build step, no new dependencies. No server.js changes (static serving
+  already covers /kjv/*).
+- Bump BOTH script tags in index.html to ?v=7 (they are at ?v=6 now).
+- Do NOT touch public/kjv/* (already generated and verified) or /tmp/kjv-raw.json.
+- Do NOT rename exported family.js functions or existing element ids.
+
+## Definition of done
+
+`node tests/data.test.js` fully green (updated + new), README/banner updated, and a
+self-report listing: files changed, tests added (count), the demo firstMention refs you
+assigned to the Vells, and confirmation that public/kjv/* and server.js are untouched.

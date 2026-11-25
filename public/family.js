@@ -64,6 +64,225 @@
     return out;
   }
 
+  // ------------------------------------------------------------ single refs
+
+  // "Book C" or "Book C:V" — nothing else (no ranges, no lists). The reader,
+  // firstMention and data/mentions.json all address scripture this way.
+  var REF_POINT = new RegExp('^(' + bookAlt + ')\\s(\\d{1,3})(?::(\\d{1,3}))?$');
+
+  /** "Psalm" is accepted (BibleGateway takes both) but the KJV files and the
+   *  reader's book list use the canonical "Psalms". */
+  function canonicalBook(book) {
+    return book === 'Psalm' ? 'Psalms' : book;
+  }
+
+  /** File slug of a book under /kjv/: "1 Samuel" -> "1-samuel". Matches the
+   *  slugs in public/kjv/index.json. */
+  function bookSlug(book) {
+    return canonicalBook(book).toLowerCase().replace(/\s+/g, '-');
+  }
+
+  /**
+   * "Genesis 2" -> { book, chapter, verse: null }; "Psalm 23:1" ->
+   * { book: 'Psalms', chapter: 23, verse: 1 }. Ranges, lists, unknown books
+   * and chapter/verse 0 give null.
+   */
+  function parseRef(ref) {
+    if (typeof ref !== 'string') return null;
+    var m = REF_POINT.exec(ref.trim().replace(/\s+/g, ' '));
+    if (!m) return null;
+    var chapter = Number(m[2]);
+    var verse = m[3] === undefined ? null : Number(m[3]);
+    if (chapter < 1 || (verse !== null && verse < 1)) return null;
+    return { book: canonicalBook(m[1]), chapter: chapter, verse: verse };
+  }
+
+  /** Canonical "Book C:V" / "Book C" string for a parsed ref. */
+  function formatRef(r) {
+    return r.book + ' ' + r.chapter + (r.verse ? ':' + r.verse : '');
+  }
+
+  /** Canonical key for a single-verse ref ("Psalm 23:1" -> "Psalms 23:1"),
+   *  or null when it isn't exactly one verse. */
+  function verseKey(ref) {
+    var r = parseRef(ref);
+    return r && r.verse ? formatRef(r) : null;
+  }
+
+  function isSingleVerseRef(ref) {
+    return verseKey(ref) !== null;
+  }
+
+  /** Why a firstMention value is unusable, or null when it is one verse. */
+  function firstMentionProblem(v) {
+    if (typeof v !== 'string' || !v.trim()) return 'firstMention is required (one verse, e.g. "Genesis 2:19")';
+    if (/[-–,;&]/.test(v) || /\band\b/i.test(v)) return 'firstMention "' + v + '" must be a single verse, not a range or a list';
+    if (!isValidRef(v)) return 'firstMention "' + v + '" is not a recognised reference';
+    if (!isSingleVerseRef(v)) return 'firstMention "' + v + '" must name one verse (Book C:V), not a whole chapter';
+    return null;
+  }
+
+  // ------------------------------------------------------------ names in verses
+
+  // Letters (incl. accented), digits: what counts as "inside a word" for the
+  // whole-phrase rule, so "Adam" never matches inside "adamant".
+  var WORD_CHAR = /[0-9A-Za-zÀ-ɏ]/;
+
+  function isWordChar(ch) { return !!ch && WORD_CHAR.test(ch); }
+
+  /** Is position i inside a word? A hyphen between letters joins a compound
+   *  ("Tubal-cain" is one name, so "Cain" must not link inside it), while an
+   *  apostrophe is still a boundary ("Adam's" names Adam). */
+  function joinedAt(s, i) {
+    var ch = s.charAt(i);
+    if (isWordChar(ch)) return true;
+    return ch === '-' && isWordChar(s.charAt(i - 1)) && isWordChar(s.charAt(i + 1));
+  }
+
+  /** Case-insensitive display-name lookup in an overrides entry for one verse. */
+  function overrideFor(entry, nameKey) {
+    if (!entry || typeof entry !== 'object') return null;
+    var keys = Object.keys(entry);
+    for (var i = 0; i < keys.length; i++) {
+      if (keys[i].trim().toLowerCase() === nameKey && typeof entry[keys[i]] === 'string') return entry[keys[i]];
+    }
+    return null;
+  }
+
+  /**
+   * Which ONE person a name occurrence in a verse refers to, or null when
+   * that can't be settled. Order:
+   *   1. only one documented person has the name -> them;
+   *   2. several do, and exactly one has THIS verse as firstMention -> them
+   *      (a first-mention verse names its person by definition);
+   *   3. several do and data/mentions.json says who is meant here -> them;
+   *   4. otherwise null. Never "just anyone with that name": sending a reader
+   *      to the wrong person is worse than not linking at all.
+   */
+  function resolveName(nameKey, index, verseRef, overrides) {
+    var people = index && index.byName ? index.byName.get(nameKey) : null;
+    if (!people || !people.length) return null;
+    if (people.length === 1) return people[0];
+    var key = verseKey(verseRef);
+    if (!key) return null;
+    var claims = people.filter(function (p) { return verseKey(p.firstMention) === key; });
+    if (claims.length === 1) return claims[0];
+    var entry = null;
+    if (overrides && typeof overrides === 'object') {
+      Object.keys(overrides).forEach(function (k) { if (!entry && verseKey(k) === key) entry = overrides[k]; });
+    }
+    var id = overrideFor(entry, nameKey);
+    if (!id) return null;
+    // An override may only pick among the people who actually bear the name.
+    var picked = people.filter(function (p) { return p.id === id; });
+    return picked.length === 1 ? picked[0] : null;
+  }
+
+  /** Names grouped by their first word (lowercased), longest name first, so
+   *  a verse scan only tries names that can start at a given word. Cached on
+   *  the index object since the reader calls this for every verse. */
+  function namesByFirstWord(index) {
+    if (index.__namesByFirstWord) return index.__namesByFirstWord;
+    var map = new Map();
+    index.byName.forEach(function (list, key) {
+      var k = key.trim().replace(/\s+/g, ' ');
+      if (!k) return;
+      var first = k.split(' ')[0];
+      if (!map.has(first)) map.set(first, []);
+      if (map.get(first).indexOf(k) === -1) map.get(first).push(k);
+    });
+    map.forEach(function (list) { list.sort(function (a, b) { return b.length - a.length; }); });
+    // Non-enumerable so it never shows up in Object.keys(index).
+    Object.defineProperty(index, '__namesByFirstWord', { value: map, enumerable: false, configurable: true });
+    return map;
+  }
+
+  /**
+   * Find documented names in one verse's text.
+   * Returns [{ start, end, text, person }] in text order. Matching is a
+   * case-insensitive whole phrase ("Adam" / "Adam's", never "adamant"); at
+   * one spot the longest name wins. An occurrence that can't be resolved to
+   * exactly one person (see resolveName) is left out — it renders as plain
+   * text — and it still consumes its span, so a shorter name inside it can't
+   * be linked instead.
+   */
+  function findNameOccurrences(verseText, index, verseRef, overrides) {
+    var out = [];
+    if (typeof verseText !== 'string' || !verseText || !index || !index.byName) return out;
+    var lower = verseText.toLowerCase();
+    // toLowerCase can change length for a few non-Latin letters; offsets
+    // would no longer line up, so link nothing rather than the wrong span.
+    if (lower.length !== verseText.length) return out;
+    var groups = namesByFirstWord(index);
+    var i = 0;
+    var n = lower.length;
+    while (i < n) {
+      if (!isWordChar(lower.charAt(i)) || (i > 0 && joinedAt(lower, i - 1))) { i++; continue; }
+      // The whole word, hyphenated parts included, keys the name lookup.
+      var j = i;
+      while (j < n && joinedAt(lower, j)) j++;
+      var candidates = groups.get(lower.slice(i, j)) || [];
+      var hit = null;
+      for (var c = 0; c < candidates.length; c++) {
+        var name = candidates[c];
+        // Spaces in a name match any run of whitespace in the verse.
+        var parts = name.split(' ');
+        var at = i;
+        var ok = true;
+        for (var w = 0; w < parts.length && ok; w++) {
+          if (w > 0) {
+            var sp = at;
+            while (sp < n && /\s/.test(lower.charAt(sp))) sp++;
+            if (sp === at) { ok = false; break; }
+            at = sp;
+          }
+          if (lower.substr(at, parts[w].length) !== parts[w]) ok = false;
+          else at += parts[w].length;
+        }
+        if (ok && !joinedAt(lower, at)) { hit = { key: name, end: at }; break; }
+      }
+      if (!hit) { i = j; continue; }
+      var person = resolveName(hit.key, index, verseRef, overrides);
+      if (person) out.push({ start: i, end: hit.end, text: verseText.slice(i, hit.end), person: person });
+      i = hit.end;
+    }
+    return out;
+  }
+
+  /**
+   * Check a parsed data/mentions.json against the people:
+   *   { "<Book C:V>": { "<display name>": "<person id>" }, ... }
+   * Every ref must be one verse; every id must exist and carry that display
+   * name (otherwise the override could never apply).
+   */
+  function validateMentions(mentions, index) {
+    var problems = [];
+    if (!mentions || typeof mentions !== 'object' || Array.isArray(mentions)) {
+      return ['mentions.json must be an object keyed by verse ("Book C:V")'];
+    }
+    Object.keys(mentions).forEach(function (ref) {
+      var where = 'mentions.json "' + ref + '"';
+      if (!isSingleVerseRef(ref) || /[-–,;]/.test(ref)) problems.push(where + ' is not a single verse reference');
+      var entry = mentions[ref];
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        problems.push(where + ' must map display names to person ids');
+        return;
+      }
+      Object.keys(entry).forEach(function (name) {
+        var id = entry[name];
+        if (typeof id !== 'string' || !index.byId.has(id)) {
+          problems.push(where + ' "' + name + '" points to unknown id "' + id + '"');
+          return;
+        }
+        var p = index.byId.get(id);
+        if (typeof p.name !== 'string' || p.name.trim().toLowerCase() !== name.trim().toLowerCase()) {
+          problems.push(where + ' "' + name + '" points to "' + id + '", whose name is "' + p.name + '"');
+        }
+      });
+    });
+    return problems;
+  }
+
   /**
    * Build lookup indexes from the flat people array.
    *
@@ -231,6 +450,8 @@
           });
         }
       }
+      var fm = firstMentionProblem(p.firstMention);
+      if (fm) problems.push(who + ' ' + fm);
       if (p.notes === undefined) return;
       // Validate list states
       ['childrenState', 'spousesState', 'siblingsState'].forEach(function (field) {
@@ -817,6 +1038,15 @@
   return {
     BOOKS: BOOKS,
     isValidRef: isValidRef,
+    parseRef: parseRef,
+    formatRef: formatRef,
+    verseKey: verseKey,
+    isSingleVerseRef: isSingleVerseRef,
+    firstMentionProblem: firstMentionProblem,
+    bookSlug: bookSlug,
+    resolveName: resolveName,
+    findNameOccurrences: findNameOccurrences,
+    validateMentions: validateMentions,
     isPositiveInt: isPositiveInt,
     bibleUrl: bibleUrl,
     splitRefs: splitRefs,

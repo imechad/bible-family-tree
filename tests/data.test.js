@@ -203,7 +203,7 @@ test('validate catches the mistakes a hand editor is likely to make', () => {
 });
 
 test('validate enforces spouse symmetry, existence, and gender pairing', () => {
-  const base = (id, gender, spouses) => ({ id, name: id, gender, generation: 1, age: null, mom: null, dad: null, spouses, notes: [] });
+  const base = (id, gender, spouses) => ({ id, name: id, gender, generation: 1, age: null, mom: null, dad: null, spouses, notes: [], firstMention: 'Genesis 4:17' });
   const ok = [base('a', 'male', ['b']), base('b', 'female', ['a'])];
   assert.deepStrictEqual(Family.validate(ok), []);
   // No spouses key at all is tolerated by the UI validator (the data test
@@ -397,10 +397,12 @@ test('filters: age range bounds, blank = unbounded, unknown ages excluded, bound
   assert(range.includes('tessaly-vell') && range.includes('ebbet-vell') === false, '70 is in, 71 is out');
   assert(range.includes('lisska-arlo') && range.includes('dovrin-arlo'));
   // One end only.
-  assert.deepStrictEqual(ids({ ageMin: '90' }).sort(), ['garrow-vell', 'isoline-ashby']);
+  // Adam (930) and Seth (912) are the real Genesis seed people.
+  assert.deepStrictEqual(ids({ ageMin: '90' }).sort(), ['adam', 'garrow-vell', 'isoline-ashby', 'seth']);
   assert.deepStrictEqual(ids({ ageMax: '9' }).sort(), ['briar-vell', 'wick-arlo']);
   // Numbers work as well as the strings an <input> yields.
-  assert.deepStrictEqual(ids({ ageMin: 90 }).sort(), ['garrow-vell', 'isoline-ashby']);
+  assert.deepStrictEqual(ids({ ageMin: 90 }).sort(), ['adam', 'garrow-vell', 'isoline-ashby', 'seth']);
+  assert.deepStrictEqual(ids({ ageMin: '90', ageMax: '100' }).sort(), ['garrow-vell', 'isoline-ashby']);
   // Unknown age can't be shown to be in range.
   assert(!ids({ ageMin: '0' }).includes('pell-vell') && !ids({ ageMin: '0' }).includes('hale-arlo'));
   assert.strictEqual(ids({ ageMin: '0' }).length, people.filter((p) => typeof p.age === 'number').length);
@@ -409,7 +411,7 @@ test('filters: age range bounds, blank = unbounded, unknown ages excluded, bound
   // Junk / half-typed input counts as no bound.
   assert.strictEqual(ids({ ageMin: '-', ageMax: '' }).length, people.length);
   // A range nobody is in yields nothing (the UI shows its empty state).
-  assert.deepStrictEqual(ids({ ageMin: '200' }), []);
+  assert.deepStrictEqual(ids({ ageMin: '1000' }), []);
 });
 
 test('filters: has notes / has children / has spouse match the derived data', () => {
@@ -555,8 +557,8 @@ async function withServer(env, fn) {
 
 // ------------------------------------------------------------------ new explicit state tests
 
-test('people count increased to 34 with new unknown cousin', () => {
-  assert.strictEqual(people.length, 34, 'should have 34 people after migration');
+test('people count: 34 mock Vells (incl. the unknown cousin) + 5 real Genesis people = 39', () => {
+  assert.strictEqual(people.length, 39, 'should have 39 people (34 demo + Adam, Eve, Cain, Abel, Seth)');
 });
 
 test('new explicit unknown/none states are accepted', () => {
@@ -582,11 +584,17 @@ test('new explicit unknown/none states are accepted', () => {
            `${p.id}: gender must be "male", "female", or "unknown"`);
     
     // Check list states
-    assert(['known', 'none', 'unknown'].includes(p.childrenState), 
+    // Absent = "known" (the validator's documented default); the Genesis
+    // seed only writes the states scripture leaves open.
+    assert(p.childrenState === undefined || ['known', 'none', 'unknown'].includes(p.childrenState), 
            `${p.id}: childrenState must be "known", "none", or "unknown"`);
-    assert(['known', 'none', 'unknown'].includes(p.spousesState), 
+    // Absent = "known" (the validator's documented default); the Genesis
+    // seed only writes the states scripture leaves open.
+    assert(p.spousesState === undefined || ['known', 'none', 'unknown'].includes(p.spousesState), 
            `${p.id}: spousesState must be "known", "none", or "unknown"`);
-    assert(['known', 'none', 'unknown'].includes(p.siblingsState), 
+    // Absent = "known" (the validator's documented default); the Genesis
+    // seed only writes the states scripture leaves open.
+    assert(p.siblingsState === undefined || ['known', 'none', 'unknown'].includes(p.siblingsState), 
            `${p.id}: siblingsState must be "known", "none", or "unknown"`);
   }
 });
@@ -780,11 +788,12 @@ test('filter rows: Age is / is between / is unknown; junk "is" matches nothing',
   const inRange = (lo, hi) => people.filter((p) => typeof p.age === 'number' && p.age >= lo && p.age <= hi).map((p) => p.id);
   assert.deepStrictEqual(rowIds([R('age', 'between', '61', '64')]), inRange(61, 64), 'inclusive');
   assert(rowIds([R('age', 'between', '61', '64')]).includes('merrit-vell') && rowIds([R('age', 'between', '61', '64')]).includes('liesl-thorne'));
-  assert.deepStrictEqual(rowIds([R('age', 'between', '90', '')]), ['garrow-vell', 'isoline-ashby'], 'blank max = unbounded');
+  assert.deepStrictEqual(rowIds([R('age', 'between', '90', '')]), ['garrow-vell', 'isoline-ashby', 'adam', 'seth'], 'blank max = unbounded');
+  assert.deepStrictEqual(rowIds([R('age', 'between', '900', '')]), ['adam', 'seth'], 'the patriarchs\' ages filter like any other');
   assert.deepStrictEqual(rowIds([R('age', 'between', '', '9')]), ['wick-arlo', 'briar-vell'], 'blank min = unbounded');
   assert.deepStrictEqual(rowIds([R('age', 'between', '70', '60')]), [], 'bounds applied as typed, never swapped');
   assert.deepStrictEqual(rowIds([R('age', 'between', '', '')]), allIds(), 'both blank = inert');
-  assert.deepStrictEqual(rowIds([R('age', 'isUnknown')]).sort(), ['hale-arlo', 'pell-vell', 'unknown-cousin']);
+  assert.deepStrictEqual(rowIds([R('age', 'isUnknown')]).sort(), ['abel', 'cain', 'eve', 'hale-arlo', 'pell-vell', 'unknown-cousin']);
 });
 
 test('filter rows: Mom / Dad contain-match the parent\'s name; unknown/none never match a query', () => {
@@ -861,7 +870,7 @@ test('filter rows AND together; blank rows inert; rowIsActive mirrors inertness'
 
 // Same-named people are distinct individuals: every link is by id, never by name.
 const SP = (id, name, gender, extra) => Object.assign(
-  { id, name, gender, generation: 1, age: 40, mom: 'unknown', dad: 'unknown', spouses: [], notes: [] }, extra);
+  { id, name, gender, generation: 1, age: 40, mom: 'unknown', dad: 'unknown', spouses: [], notes: [], firstMention: 'Genesis 4:17' }, extra);
 const sameNameRows = (list, rows) => Family.filterByRows(list, Family.buildIndex(list), rows).map((p) => p.id);
 
 test('same name: byName is a multi-map holding every same-named person in data order', () => {
@@ -923,6 +932,264 @@ test('same name: two same-named sisters (same mom, dad, generation) are two peop
   assert(found.includes('mary-1') && found.includes('mary-2'));
 });
 
+// ------------------------------------------------------------------ KJV text
+
+const KJV_DIR = path.join(ROOT, 'public', 'kjv');
+const kjvBooks = new Map(); // slug -> parsed file, so each is read once
+const kjv = (slug) => {
+  if (!kjvBooks.has(slug)) kjvBooks.set(slug, JSON.parse(fs.readFileSync(path.join(KJV_DIR, `${slug}.json`), 'utf8')));
+  return kjvBooks.get(slug);
+};
+/** Text of a single-verse ref, or undefined when the verse doesn't exist. */
+const verseText = (ref) => {
+  const r = Family.parseRef(ref);
+  const ch = kjv(Family.bookSlug(r.book)).chapters[r.chapter - 1];
+  return ch && ch[r.verse - 1];
+};
+
+test('KJV: index.json lists the 66 books in canonical order with slugs the app derives', () => {
+  const index = JSON.parse(fs.readFileSync(path.join(KJV_DIR, 'index.json'), 'utf8'));
+  assert.strictEqual(index.length, 66);
+  // Same spellings as family.js's BOOKS (minus the "Psalm" alias), same order.
+  assert.deepStrictEqual(index.map((b) => b.book), Family.BOOKS.filter((b) => b !== 'Psalm'));
+  for (const b of index) assert.strictEqual(Family.bookSlug(b.book), b.slug, `${b.book} slug`);
+  assert.strictEqual(Family.bookSlug('1 Samuel'), '1-samuel');
+  assert.strictEqual(Family.bookSlug('Psalm'), 'psalms', 'the "Psalm" alias maps to the Psalms file');
+  assert.strictEqual(Family.bookSlug('Song of Solomon'), 'song-of-solomon');
+});
+
+test('KJV: every index entry\'s file exists, parses, and has the listed chapter count', () => {
+  const index = JSON.parse(fs.readFileSync(path.join(KJV_DIR, 'index.json'), 'utf8'));
+  let verses = 0;
+  for (const b of index) {
+    const file = kjv(b.slug);
+    assert.strictEqual(file.book, b.book, `${b.slug}.json names its book`);
+    assert.strictEqual(file.chapters.length, b.chapters, `${b.book} chapter count`);
+    for (const ch of file.chapters) {
+      assert(Array.isArray(ch) && ch.length > 0, `${b.book}: every chapter has verses`);
+      verses += ch.length;
+    }
+  }
+  assert.strictEqual(verses, 31102, 'the whole KJV');
+});
+
+test('KJV: Genesis has 50 chapters, 31 verses in chapter 1; spot texts', () => {
+  const gen = kjv('genesis');
+  assert.strictEqual(gen.chapters.length, 50);
+  assert.strictEqual(gen.chapters[0].length, 31);
+  assert.strictEqual(verseText('Genesis 1:1'), 'In the beginning God created the heaven and the earth.');
+  assert.match(verseText('John 3:16'), /^For God so loved the world, that he gave his only begotten Son/);
+  assert.strictEqual(kjv('psalms').chapters[118].length, 176, 'Psalm 119');
+  assert.strictEqual(verseText('Psalm 119:176'), verseText('Psalms 119:176'));
+});
+
+// ------------------------------------------------------------------ firstMention
+
+test('refs: parseRef / verseKey / isSingleVerseRef', () => {
+  assert.deepStrictEqual(Family.parseRef('Genesis 2'), { book: 'Genesis', chapter: 2, verse: null });
+  assert.deepStrictEqual(Family.parseRef(' 1 Samuel 3:4 '), { book: '1 Samuel', chapter: 3, verse: 4 });
+  assert.deepStrictEqual(Family.parseRef('Psalm 23:1'), { book: 'Psalms', chapter: 23, verse: 1 });
+  for (const bad of ['Genesis 1:1-2', 'Genesis 1:1, 2:3', 'Hezekiah 1:1', 'Genesis', 'Genesis 0:1', 'Genesis 1:0', '', null, 7]) {
+    assert.strictEqual(Family.parseRef(bad), null, `parseRef(${JSON.stringify(bad)})`);
+  }
+  assert.strictEqual(Family.verseKey('Psalm 23:1'), 'Psalms 23:1');
+  assert.strictEqual(Family.verseKey('Genesis 2'), null, 'a chapter is not a verse');
+  assert(Family.isSingleVerseRef('Song of Solomon 1:1'));
+  assert(!Family.isSingleVerseRef('Genesis 2'));
+});
+
+test('firstMention: missing/empty, ranges, lists, bogus books and whole chapters are rejected', () => {
+  const one = (firstMention) => Family.validate([{ id: 'x', name: 'X', gender: 'male', generation: 1, age: null,
+    mom: 'none', dad: 'none', spouses: [], notes: [], firstMention }]);
+  const expectProblem = (v, needle) => {
+    const problems = one(v).join('\n');
+    assert(problems.includes(needle), `firstMention ${JSON.stringify(v)} should give a problem mentioning "${needle}", got:\n${problems}`);
+  };
+  expectProblem(undefined, 'firstMention is required');
+  expectProblem('', 'firstMention is required');
+  expectProblem('   ', 'firstMention is required');
+  expectProblem(42, 'firstMention is required');
+  expectProblem('Genesis 1:1-2', 'single verse, not a range');
+  expectProblem('Genesis 1:1–2', 'single verse, not a range');
+  expectProblem('Genesis 1:1, 2:3', 'single verse, not a range or a list');
+  expectProblem('Genesis 1:1; Exodus 2:1', 'single verse, not a range or a list');
+  expectProblem('Hezekiah 1:1', 'not a recognised reference');
+  expectProblem('genesis 1:1', 'not a recognised reference');
+  expectProblem('Genesis 2', 'must name one verse');
+  for (const ok of ['Genesis 2:19', '1 Samuel 3:4', 'Psalm 23:1', 'Psalms 23:1', 'Song of Solomon 1:1', 'Revelation 22:21']) {
+    assert.deepStrictEqual(one(ok), [], `"${ok}" is a valid firstMention`);
+    assert.strictEqual(Family.firstMentionProblem(ok), null);
+  }
+});
+
+test('firstMention: every person in people.json has one, and the verse exists in the KJV', () => {
+  for (const p of people) {
+    assert.strictEqual(Family.firstMentionProblem(p.firstMention), null, `${p.id}: ${Family.firstMentionProblem(p.firstMention)}`);
+    assert.strictEqual(typeof verseText(p.firstMention), 'string', `${p.id}: ${p.firstMention} is not a KJV verse`);
+  }
+  assert.deepStrictEqual(Family.validate(people), []);
+});
+
+test('firstMention: the Vells\' demo refs sit in Genesis 4-11, earlier generations first', () => {
+  const vells = people.slice(0, 34);
+  let prev = [4, 0];
+  for (const p of vells) {
+    const r = Family.parseRef(p.firstMention);
+    assert.strictEqual(r.book, 'Genesis', p.id);
+    assert(r.chapter >= 4 && r.chapter <= 11, `${p.id}: ${p.firstMention} outside Genesis 4-11`);
+    assert(r.chapter > prev[0] || (r.chapter === prev[0] && r.verse > prev[1]), `${p.id}: demo refs run forward in data order`);
+    // Invented names never occur in scripture, so these are placeholders.
+    assert(!new RegExp(`\\b${p.name.split(' ')[0]}\\b`, 'i').test(verseText(p.firstMention)), `${p.id}'s name is not in scripture`);
+    prev = [r.chapter, r.verse];
+  }
+});
+
+// ------------------------------------------------------------------ Genesis seed
+
+const SEED = { adam: 'Genesis 2:19', eve: 'Genesis 3:20', cain: 'Genesis 4:1', abel: 'Genesis 4:2', seth: 'Genesis 4:25' };
+
+test('Genesis seed: 39 people; the five real people with their exact firstMention refs', () => {
+  assert.strictEqual(people.length, 39);
+  const byId = new Map(people.map((p) => [p.id, p]));
+  for (const [id, ref] of Object.entries(SEED)) {
+    assert(byId.has(id), `${id} exists`);
+    assert.strictEqual(byId.get(id).firstMention, ref, `${id}.firstMention`);
+  }
+  assert.strictEqual(byId.get('adam').age, 930);
+  assert.strictEqual(byId.get('eve').age, 'unknown');
+  for (const id of ['cain', 'abel', 'seth']) {
+    const p = byId.get(id);
+    assert.strictEqual(p.mom, 'eve', `${id}.mom`);
+    assert.strictEqual(p.dad, 'adam', `${id}.dad`);
+    assert.strictEqual(p.spousesState, 'unknown', `${id}.spousesState`);
+    assert.strictEqual(p.childrenState, 'unknown', `${id}.childrenState`);
+  }
+  const idx = Family.buildIndex(people);
+  assert.deepStrictEqual(Family.deriveUnions(idx).byKey.get('eve|adam').children, ['cain', 'abel', 'seth']);
+  assert.deepStrictEqual(idx.spousesOf.get('adam'), ['eve']);
+  assert.deepStrictEqual(Family.validate(people), []);
+});
+
+test('Genesis seed: each firstMention verse states the name, and no earlier verse does', () => {
+  const gen = kjv('genesis');
+  const byId = new Map(people.map((p) => [p.id, p]));
+  for (const [id, ref] of Object.entries(SEED)) {
+    const name = byId.get(id).name;
+    const re = new RegExp(`\\b${name}\\b`);
+    const r = Family.parseRef(ref);
+    assert(re.test(verseText(ref)), `${ref} names ${name}: "${verseText(ref)}"`);
+    let first = null;
+    gen.chapters.some((ch, c) => ch.some((v, i) => (re.test(v) ? (first = `Genesis ${c + 1}:${i + 1}`) : false)));
+    assert.strictEqual(first, Family.formatRef(r), `${name} is first named at ${first}`);
+  }
+});
+
+test('Genesis seed: the reader links the real names in Genesis 4:1-2 and 4:25', () => {
+  const idx = Family.buildIndex(people);
+  const linked = (ref) => Family.findNameOccurrences(verseText(ref), idx, ref, {}).map((o) => `${o.text}=${o.person.id}`);
+  assert.deepStrictEqual(linked('Genesis 4:1'), ['Adam=adam', 'Eve=eve', 'Cain=cain']);
+  assert.deepStrictEqual(linked('Genesis 4:2'), ['Abel=abel', 'Abel=abel', 'Cain=cain']);
+  assert.deepStrictEqual(linked('Genesis 4:25'), ['Adam=adam', 'Seth=seth', 'Abel=abel', 'Cain=cain']);
+  assert.deepStrictEqual(linked('Genesis 1:1'), []);
+  assert.deepStrictEqual(linked('Genesis 4:22'), [], 'Tubal-cain is not Adam\'s son Cain');
+});
+
+// ------------------------------------------------------------------ name resolution
+
+const NP = (id, name, firstMention) => ({ id, name, gender: 'female', generation: 1, age: null,
+  mom: 'unknown', dad: 'unknown', spouses: [], notes: [], firstMention });
+const occ = (text, list, ref, overrides) => Family.findNameOccurrences(text, Family.buildIndex(list), ref, overrides)
+  .map((o) => [o.start, o.end, o.text, o.person.id]);
+
+test('names: a unique name resolves; case-insensitive; possessive; word boundaries', () => {
+  const list = [NP('adam', 'Adam', 'Genesis 2:19'), NP('eve', 'Eve', 'Genesis 3:20')];
+  assert.deepStrictEqual(occ('And Adam knew Eve his wife', list, 'Genesis 4:1'),
+    [[4, 8, 'Adam', 'adam'], [14, 17, 'Eve', 'eve']]);
+  assert.deepStrictEqual(occ("ADAM's rib", list, 'Genesis 9:9'), [[0, 4, 'ADAM', 'adam']], 'case-insensitive, "Adam\'s"');
+  assert.deepStrictEqual(occ('an adamant stone, even on the eve; madam', list, 'Ezekiel 3:9'), [[30, 33, 'eve', 'eve']],
+    '"adamant", "even" and "madam" merely contain a name');
+  assert.deepStrictEqual(occ('Adam1 Adam_x', list, 'Genesis 1:1'), [[6, 10, 'Adam', 'adam']], 'digits are word chars; "_" is not');
+  // A hyphen joins a compound name: Tubal-cain is not Cain (Genesis 4:22).
+  const cain = [NP('cain', 'Cain', 'Genesis 4:1'), NP('tc', 'Tubal-cain', 'Genesis 4:22')];
+  assert.deepStrictEqual(occ('Tubal-cain, and the sister of Tubal-cain', [cain[0]], 'Genesis 4:22'), [], 'no Cain inside Tubal-cain');
+  assert.deepStrictEqual(occ('cain-tubal', [cain[0]], 'Genesis 4:22'), [], 'nor at the front of a compound');
+  assert.deepStrictEqual(occ('Tubal-cain and Cain - and Cain', cain, 'Genesis 4:22'),
+    [[0, 10, 'Tubal-cain', 'tc'], [15, 19, 'Cain', 'cain'], [26, 30, 'Cain', 'cain']], 'a spaced dash is still a boundary');
+  assert.deepStrictEqual(occ('', list, 'Genesis 1:1'), []);
+  assert.deepStrictEqual(Family.findNameOccurrences('Adam', null, 'Genesis 1:1'), [], 'no index, no links');
+});
+
+test('names: the longest name wins on overlap; a multi-word name only as the adjacent phrase', () => {
+  const list = [NP('gv', 'Garrow Vell', 'Genesis 4:17'), NP('g', 'Garrow', 'Genesis 4:18'), NP('v', 'Vell', 'Genesis 4:19')];
+  assert.deepStrictEqual(occ('Garrow Vell spake unto Garrow', list, 'Genesis 9:9'),
+    [[0, 11, 'Garrow Vell', 'gv'], [23, 29, 'Garrow', 'g']]);
+  assert.deepStrictEqual(occ('Garrow\nVell', list, 'Genesis 9:9'), [[0, 11, 'Garrow\nVell', 'gv']], 'any whitespace between words');
+  assert.deepStrictEqual(occ('Garrow, Vell', list, 'Genesis 9:9'), [[0, 6, 'Garrow', 'g'], [8, 12, 'Vell', 'v']],
+    'not adjacent: each word on its own');
+  assert.deepStrictEqual(occ('Garrow Vellum', list, 'Genesis 9:9'), [[0, 6, 'Garrow', 'g']], 'phrase must end on a boundary');
+});
+
+test('names: a repeated name anchors to the person whose firstMention is this verse', () => {
+  const list = [NP('mary-a', 'Mary', 'Luke 1:27'), NP('mary-b', 'Mary', 'Matthew 27:56')];
+  assert.deepStrictEqual(occ('the virgin\'s name was Mary', list, 'Luke 1:27'), [[22, 26, 'Mary', 'mary-a']]);
+  assert.deepStrictEqual(occ('Among which was Mary', list, 'Matthew 27:56'), [[16, 20, 'Mary', 'mary-b']]);
+  // Two people claiming the same first-mention verse settle nothing.
+  const clash = [NP('m1', 'Mary', 'Luke 1:27'), NP('m2', 'Mary', 'Luke 1:27')];
+  assert.deepStrictEqual(occ('Mary', clash, 'Luke 1:27'), []);
+});
+
+test('names: a repeated name in a later verse resolves through mentions overrides', () => {
+  const list = [NP('mary-a', 'Mary', 'Luke 1:27'), NP('mary-b', 'Mary', 'Matthew 27:56'), NP('john', 'John', 'Matthew 3:1')];
+  const overrides = { 'John 19:25': { Mary: 'mary-b' } };
+  assert.deepStrictEqual(occ('his mother\'s sister, Mary', list, 'John 19:25', overrides), [[21, 25, 'Mary', 'mary-b']]);
+  assert.deepStrictEqual(occ('MARY', list, 'John 19:25', { 'John 19:25': { mary: 'mary-a' } }), [[0, 4, 'MARY', 'mary-a']],
+    'display-name keys match case-insensitively');
+  assert.deepStrictEqual(occ('Mary', list, 'Psalms 23:1', { 'Psalm 23:1': { Mary: 'mary-a' } }), [[0, 4, 'Mary', 'mary-a']],
+    'verse keys are compared canonically');
+  // An override only picks among people who bear the name.
+  assert.deepStrictEqual(occ('Mary', list, 'John 19:25', { 'John 19:25': { Mary: 'john' } }), []);
+  assert.deepStrictEqual(occ('Mary', list, 'John 19:25', { 'John 19:25': { Mary: 'ghost' } }), []);
+  // An override for another verse doesn't leak.
+  assert.deepStrictEqual(occ('Mary', list, 'John 19:26', overrides), []);
+});
+
+test('names: a still-ambiguous repeated name is plain text — never a guess', () => {
+  const list = [NP('mary-a', 'Mary', 'Luke 1:27'), NP('mary-b', 'Mary', 'Matthew 27:56'), NP('john', 'John', 'Matthew 3:1')];
+  assert.deepStrictEqual(occ('Mary and John', list, 'John 19:25'), [[9, 13, 'John', 'john']], 'only the unique name links');
+  assert.deepStrictEqual(occ('Mary and John', list, 'John 19:25', undefined), [[9, 13, 'John', 'john']]);
+  assert.strictEqual(Family.resolveName('mary', Family.buildIndex(list), 'John 19:25', {}), null);
+  // An ambiguous long name still owns its span: the shorter name inside it
+  // must not be linked in its place.
+  const nested = [NP('gv1', 'Garrow Vell', 'Genesis 4:17'), NP('gv2', 'Garrow Vell', 'Genesis 4:18'), NP('g', 'Garrow', 'Genesis 4:19')];
+  assert.deepStrictEqual(occ('Garrow Vell', nested, 'Genesis 9:9'), []);
+  assert.deepStrictEqual(occ('Garrow Vell', nested, 'Genesis 4:18'), [[0, 11, 'Garrow Vell', 'gv2']]);
+});
+
+test('mentions.json: validateMentions checks refs, ids and names; the real file (if any) is clean', () => {
+  const list = [NP('mary-a', 'Mary', 'Luke 1:27'), NP('mary-b', 'Mary', 'Matthew 27:56'), NP('john', 'John', 'Matthew 3:1')];
+  const idx = Family.buildIndex(list);
+  assert.deepStrictEqual(Family.validateMentions({ 'John 19:25': { Mary: 'mary-b' }, 'Psalm 1:1': {} }, idx), []);
+  const problems = Family.validateMentions({
+    'John 19:25-26': { Mary: 'mary-b' },
+    'John 19': { Mary: 'mary-b' },
+    'Luke 2:5': { Mary: 'ghost' },
+    'Luke 2:6': { Mary: 'john' },
+    'Luke 2:7': 'mary-a'
+  }, idx).join('\n');
+  for (const needle of ['"John 19:25-26" is not a single verse', '"John 19" is not a single verse',
+    'points to unknown id "ghost"', 'points to "john", whose name is "John"', '"Luke 2:7" must map display names']) {
+    assert(problems.includes(needle), `expected "${needle}" in:\n${problems}`);
+  }
+  assert.deepStrictEqual(Family.validateMentions([], idx), ['mentions.json must be an object keyed by verse ("Book C:V")']);
+
+  const file = path.join(ROOT, 'data', 'mentions.json');
+  if (fs.existsSync(file)) {
+    const real = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.deepStrictEqual(Family.validateMentions(real, Family.buildIndex(people)), []);
+    for (const ref of Object.keys(real)) assert.strictEqual(typeof verseText(ref), 'string', `mentions.json: ${ref} is a KJV verse`);
+  }
+});
+
 test('server boots, serves the page, and /api/people returns the array', () => withServer({}, async (port) => {
   const api = await get(port, '/api/people');
   assert.strictEqual(api.status, 200);
@@ -934,6 +1201,16 @@ test('server boots, serves the page, and /api/people returns the array', () => w
   const page = await get(port, '/');
   assert.strictEqual(page.status, 200);
   assert.match(page.body, /MOCK DATA/);
+  assert.match(page.body, /Vell family is invented/, 'banner says the Vells are the invented demo');
+  assert.match(page.body, /Adam’s family \(Genesis 2–5\) is the first real data/, 'banner names the first real data');
+  for (const id of ['bible-btn', 'reader-panel', 'reader-backdrop', 'reader-book', 'reader-prev', 'reader-next', 'reader-where', 'reader-close', 'reader-body']) {
+    assert(page.body.includes(`id="${id}"`), `page should contain #${id}`);
+  }
+  assert(page.body.includes('family.js?v=7') && page.body.includes('app.js?v=7'), 'both scripts cache-busted at v=7');
+  const kjvIndex = await get(port, '/kjv/index.json');
+  assert.strictEqual(kjvIndex.status, 200, 'KJV files are served statically');
+  assert.match(kjvIndex.type, /application\/json/);
+  assert.strictEqual((await get(port, '/kjv/1-samuel.json')).status, 200);
   // The prefix search was removed — its hint must be gone from the page too.
   assert(!/kid:/.test(page.body), 'prefix search hint should be gone along with the search box');
   // Generation/Gender live in the filter panel now, alongside the new filters.
@@ -960,6 +1237,30 @@ test('malformed people.json yields a JSON error, and the server stays up', async
       fs.writeFileSync(badFile, '[]');
       const fixed = await get(port, '/api/people');
       assert.strictEqual(fixed.status, 200);
+      assert.strictEqual(child.exitCode, null, 'server must still be running');
+    });
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('GET /api/mentions: absent file yields {}, malformed yields 500, fixes need no restart', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bft-'));
+  const file = path.join(tmp, 'mentions.json');
+  try {
+    await withServer({ MENTIONS_FILE: file }, async (port, child) => {
+      const absent = await get(port, '/api/mentions');
+      assert.strictEqual(absent.status, 200);
+      assert.match(absent.type, /application\/json/);
+      assert.deepStrictEqual(JSON.parse(absent.body), {});
+      fs.writeFileSync(file, '{ "Genesis 4:1": ');
+      const bad = await get(port, '/api/mentions');
+      assert.strictEqual(bad.status, 500);
+      assert.match(JSON.parse(bad.body).error, /mentions\.json is not valid JSON/);
+      fs.writeFileSync(file, '{ "Genesis 4:1": { "Eve": "eve" } }');
+      const ok = await get(port, '/api/mentions');
+      assert.strictEqual(ok.status, 200);
+      assert.deepStrictEqual(JSON.parse(ok.body), { 'Genesis 4:1': { Eve: 'eve' } });
       assert.strictEqual(child.exitCode, null, 'server must still be running');
     });
   } finally {

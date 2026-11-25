@@ -2,6 +2,7 @@
   {
     "id": "garrow-vell",
     "name": "Garrow Vell",
+    "firstMention": "Genesis 4:17",
     "gender": "male",
     "generation": 1,
     "age": 96,
@@ -38,6 +39,7 @@
   {
     "id": "isoline-ashby",
     "name": "Isoline Ashby",
+    "firstMention": "Genesis 4:18",
     "gender": "female",
     "generation": 1,
     "age": 91,
@@ -67,6 +69,7 @@
   {
     "id": "bram-vell",
     "name": "Bram Vell",
+    "firstMention": "Genesis 4:19",
     "gender": "male",
     "generation": 2,
     "age": 78,
@@ -97,6 +100,7 @@
   {
     "id": "maelis-dunhart",
     "name": "Maelis Dunhart",
+    "firstMention": "Genesis 4:20",
     "gender": "female",
     "generation": 2,
     "age": 82,
@@ -113,6 +117,7 @@
   {
     "id": "tessaly-vell",
     "name": "Tessaly Vell",
+    "firstMention": "Genesis 4:21",
     "gender": "female",
     "generation": 2,
     "age": 70,
@@ -134,6 +139,7 @@
   {
     "id": "corwin-vell",
     "name": "Corwin Vell",
+    "firstMention": "Genesis 4:22",
     "gender": "male",
     "generation": 2,
     "age": 66,
@@ -163,6 +169,7 @@
   {
     "id": "liesl-thorne",
     "name": "Liesl Thorne",
+    "firstMention": "Genesis 4:23",
     "gender": "female",
     "generation": 2,
     "age": 64,
@@ -192,6 +199,7 @@
   {
     "id": "ebbet-vell",
     "name": "Ebbet Vell",
+    "firstMention": "Genesis 5:3",
     "gender": "male",
     "generation": 3,
     "age": 71,
@@ -208,6 +216,7 @@
   {
     "id": "ysolde-marrick",
     "name": "Ysolde Marrick",
+    "firstMention": "Genesis 5:6",
     "gender": "female",
     "generation": 3,
     "age": 69,
@@ -224,6 +233,7 @@
   {
     "id": "nyra-vell",
     "name": "Nyra Vell",
+    "firstMention": "Genesis 5:9",
     "gender": "female",
     "generation": 3,
     "age": 64,
@@ -238,6 +248,7 @@
   {
     "id": "pell-vell",
     "name": "Pell Vell",
+    "firstMention": "Genesis 5:12",
     "gender": "male",
     "generation": 3,
     "age": "unknown",
@@ -252,6 +263,7 @@
   {
     "id": "quillon-vell",
     "name": "Quillon Vell",
+    "firstMention": "Genesis 5:15",
     "gender": "male",
     "generation": 3,
     "age": 39,
@@ -266,6 +278,7 @@
   {
     "id": "rowen-vell",
     "name": "Rowen Vell",
+    "firstMention": "Genesis 5:18",
     "gender": "female",
     "generation": 3,
     "age": 58,
@@ -287,6 +300,7 @@
   {
     "id": "taddeo-vell",
     "name": "Taddeo Vell",
+    "firstMention": "Genesis 6:9",
     "gender": "male",
     "generation": 4,
     "age": 80,
@@ -336,6 +350,7 @@
   {
     "id": "cassia-holloway",
     "name": "Cassia Holloway",
+    "firstMention": "Genesis 6:10",
     "gender": "female",
     "generation": 4,
     "age": 75,
@@ -352,6 +367,7 @@
   {
     "id": "odile-fairbairn",
     "name": "Odile Fairbairn",
+    "firstMention": "Genesis 7:1",
     "gender": "female",
     "generation": 4,
     "age": 68,
@@ -375,6 +391,7 @@
   {
     "id": "wrenna-vell",
     "name": "Wrenna Vell",
+    "firstMention": "Genesis 7:7",
     "gender": "female",
     "generation": 4,
     "age": 77,
@@ -416,6 +433,7 @@
   {
     "id": "fenwick-arlo",
     "name": "Fenwick Arlo",
+    "firstMention": "Genesis 7:13",
     "gender": "male",
     "generation": 4,
     "age": 72,
@@ -432,6 +450,7 @@
   {
     "id": "ozric-vell",
     "name": "Ozric Vell",
+    "firstMention": "Genesis 8:1",
     "gender": "unknown",
     "generation": 4,
     "age": 55,
@@ -446,6 +465,7 @@
   {
     "id": "merrit-vell",
     "name": "Merrit Vell",
+    "firstMention": "Genesis 8:15",
     "gender": "female",
     "generation": 4,
     "age": 61,
@@ -473,6 +493,7 @@
   {
     "id": "brisk-vell",
     "name": "Brisk Vell",
+    "firstMention": "Genesis 9:1",
     "gender": "male",
     "generation": 5,
     "age": 49,
@@ -487,6 +508,7 @@
   {
     "id": "sorrel-vell",
     "name": "Sorrel Vell",
+    "firstMention": "Genesis 9:18",
     "gender": "female",
     "generation": 5,
     "age": 52,
@@ -501,6 +523,7 @@
   {
     "id": "tamsin-vell",
     "name": "Tamsin Vell",
+    "firstMention": "Genesis 9:19",
     "gender": "female",
     "generation": 5,
     "age": 38,
@@ -515,6 +538,7 @@
   {
     "id": "lisska-arlo",
     "name": "Lisska Arlo",
+    "firstMention": "Genesis 9:20",
     "gender": "female",
     "generation": 5,
     "age": 68,
@@ -542,6 +566,7 @@
   {
     "id": "dovrin-arlo",
     "name": "Dovrin Arlo",
+    "firstMention": "Genesis 9:28",
     "gender": "male",
     "generation": 5,
     "age": 63,
@@ -556,6 +581,7 @@
   {
     "id": "hale-arlo",
     "name": "Hale Arlo",
+    "firstMention": "Genesis 10:1",
     "gender": "male",
     "generation": 5,
     "age": "unknown",
@@ -570,6 +596,7 @@
   {
     "id": "juniver-vell",
     "name": "Juniver Vell",
+    "firstMention": "Genesis 10:2",
     "gender": "female",
     "generation": 5,
     "age": 40,
@@ -584,6 +611,7 @@
   {
     "id": "kestrel-arlo",
     "name": "Kestrel Arlo",
+    "firstMention": "Genesis 10:6",
     "gender": "male",
     "generation": 6,
     "age": 41,
@@ -598,6 +626,7 @@
   {
     "id": "thistle-arlo",
     "name": "Thistle Arlo",
+    "firstMention": "Genesis 10:21",
     "gender": "female",
     "generation": 6,
     "age": 44,
@@ -612,6 +641,7 @@
   {
     "id": "pim-vell",
     "name": "Pim Vell",
+    "firstMention": "Genesis 10:22",
     "gender": "male",
     "generation": 6,
     "age": 30,
@@ -626,6 +656,7 @@
   {
     "id": "lark-vell",
     "name": "Lark Vell",
+    "firstMention": "Genesis 10:25",
     "gender": "female",
     "generation": 6,
     "age": 28,
@@ -640,6 +671,7 @@
   {
     "id": "wick-arlo",
     "name": "Wick Arlo",
+    "firstMention": "Genesis 11:10",
     "gender": "male",
     "generation": 7,
     "age": 9,
@@ -654,6 +686,7 @@
   {
     "id": "briar-vell",
     "name": "Briar Vell",
+    "firstMention": "Genesis 11:26",
     "gender": "female",
     "generation": 7,
     "age": 6,
@@ -693,6 +726,7 @@
   {
     "id": "unknown-cousin",
     "name": "Unknown Cousin",
+    "firstMention": "Genesis 11:31",
     "gender": "unknown",
     "generation": "unknown",
     "age": "unknown",
@@ -703,5 +737,75 @@
     "childrenState": "unknown",
     "spousesState": "unknown",
     "siblingsState": "unknown"
+  },
+  {
+    "id": "adam",
+    "name": "Adam",
+    "gender": "male",
+    "generation": 1,
+    "age": 930,
+    "mom": "none",
+    "dad": "none",
+    "spouses": [
+      "eve"
+    ],
+    "notes": [],
+    "firstMention": "Genesis 2:19"
+  },
+  {
+    "id": "eve",
+    "name": "Eve",
+    "gender": "female",
+    "generation": 1,
+    "age": "unknown",
+    "mom": "none",
+    "dad": "none",
+    "spouses": [
+      "adam"
+    ],
+    "notes": [],
+    "firstMention": "Genesis 3:20"
+  },
+  {
+    "id": "cain",
+    "name": "Cain",
+    "gender": "male",
+    "generation": 2,
+    "age": "unknown",
+    "mom": "eve",
+    "dad": "adam",
+    "spouses": [],
+    "spousesState": "unknown",
+    "childrenState": "unknown",
+    "notes": [],
+    "firstMention": "Genesis 4:1"
+  },
+  {
+    "id": "abel",
+    "name": "Abel",
+    "gender": "male",
+    "generation": 2,
+    "age": "unknown",
+    "mom": "eve",
+    "dad": "adam",
+    "spouses": [],
+    "spousesState": "unknown",
+    "childrenState": "unknown",
+    "notes": [],
+    "firstMention": "Genesis 4:2"
+  },
+  {
+    "id": "seth",
+    "name": "Seth",
+    "gender": "male",
+    "generation": 2,
+    "age": 912,
+    "mom": "eve",
+    "dad": "adam",
+    "spouses": [],
+    "spousesState": "unknown",
+    "childrenState": "unknown",
+    "notes": [],
+    "firstMention": "Genesis 4:25"
   }
 ]
