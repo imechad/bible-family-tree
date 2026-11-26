@@ -9,14 +9,20 @@ a detail panel showing each person's relatives and scripture-cited, AI-gathered 
 and a built-in KJV Bible reader whose highlighted names jump straight to that person in
 the tree.
 
-> **⚠ THE WALK HAS STARTED — GENESIS 1.** The Bible is being entered verse by verse,
-> starting at the beginning. Genesis 1 names **no people** — it names things (Day, Night,
-> Heaven, Earth, Seas) and creates "man… male and female" without naming either — so
-> `data/people.json` is currently **empty** and the tree has nobody on it yet. The first
-> named person arrives in Genesis 2 (Adam is first called *Adam* at Genesis 2:19, not
-> before). People are added **only by editing the data files** — no code changes needed.
-> The retired phase-1 demo family (the invented "Vell" dynasty) lives on only as a test
-> fixture inside `tests/data.test.js`, keeping the search/filter engine tests honest.
+> **⚠ THE WALK IS UNDERWAY — GENESIS 2.** The Bible is being entered verse by verse,
+> starting at the beginning. Genesis 1 named **no people** — it names things (Day, Night,
+> Heaven, Earth, Seas) and creates "man… male and female" without naming either. Genesis
+> 2 names **Adam** — the KJV first calls him *Adam* at **Genesis 2:19** (every verse
+> before it says only "the man") — and he is now the tree's first person: formed from
+> the dust (Genesis 2:7), no parents (`mom`/`dad` = `"none"`), no siblings, generation 1,
+> age not recorded. His wife is built from his rib and *called Woman* (Genesis 2:22-23),
+> but her proper name **Eve** is not stated until **Genesis 3:20**, which has not been
+> walked yet — a person enters the tree only at the verse where their name is stated, so
+> she is not on the tree yet and Adam's marriage is recorded in his notes but not drawn.
+> People are added **only by editing the data files** — no code changes needed. God, who
+> acts throughout both chapters, is not a person record in the tree. The retired
+> phase-1 demo family (the invented "Vell" dynasty) lives on only as a test fixture
+> inside `tests/data.test.js`, keeping the search/filter engine tests honest.
 
 ## Run it
 

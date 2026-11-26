@@ -1,0 +1,37 @@
+MINIMAL changes only. Do not rewrite anything beyond the one test described below. Do not touch any other file.
+
+## Context
+This is the Bible Family Tree Explorer (~/bible-family-tree). The data walk has moved from Genesis 1 (zero people, empty data file) to Genesis 2 (Adam entered as the first person in data/people.json). One test still asserts the live data file is empty — a Genesis-1 phase snapshot that is now outdated. The engine itself is fine.
+
+## What already exists (DO NOT duplicate or rewrite)
+- tests/data.test.js line 144: test('empty data is valid: zero people flow through validate, index and unions', () => {
+- Lines 145-149 of that test unit-test an empty array through Family.validate / buildIndex / deriveUnions — KEEP THESE UNCHANGED.
+- public/family.js line 408: function validate(people, index) — returns the `problems` array ([] when the data is clean). It does NOT return the people array.
+- The live data file (data/people.json) now contains exactly one person, Adam, fully valid.
+
+## The one change (tests/data.test.js only)
+1. Line 144: change the test title from
+   'empty data is valid: zero people flow through validate, index and unions'
+   to
+   'empty data is valid: an empty array flows through validate, index and unions'
+2. Replace lines 150-152, which currently read:
+
+  // The real data file is empty right now (Genesis 1 named nobody); the server
+  // smoke test below proves /api/people serves it as-is.
+  assert.deepStrictEqual(people, []);
+
+with:
+
+  // The real data file held zero people through Genesis 1; from Genesis 2 on it
+  // holds walked people (Adam first). Whatever it holds, it must validate clean:
+  // Family.validate returns [] when there are no problems, and the server smoke
+  // test below proves /api/people serves the file as-is.
+  assert.deepStrictEqual(Family.validate(people), [], 'live people.json validates clean');
+
+## Constraints
+- Touch ONLY tests/data.test.js. No other file, no other test, no comment rewording elsewhere.
+- Do NOT run git commands (the caller commits).
+
+## Verify
+Run: node tests/data.test.js
+It must report 54/54 passed. If anything else fails, stop and report — do not "fix" anything beyond the described change.
