@@ -9,20 +9,14 @@ a detail panel showing each person's relatives and scripture-cited, AI-gathered 
 and a built-in KJV Bible reader whose highlighted names jump straight to that person in
 the tree.
 
-> **⚠ Phase 1.5 — MOCK DATA + the first real people.** `data/people.json` holds two kinds
-> of people side by side:
-> - **The Vell family is invented demo data** (the "Vell" dynasty, 34 people over 7
->   generations plus one relative of unknown generation, including a remarriage and a
->   childless couple). None of them are Bible characters. Their notes are made-up demo
->   text that cites real Genesis verses only so the links can be clicked and checked,
->   and their `firstMention` values are **demo placeholders**: real Genesis 4–11 verses
->   picked so the reader has something to open — their invented names never occur in
->   scripture.
-> - **Adam's family (Genesis 2–5) is the first real data:** Adam, Eve, Cain, Abel and
->   Seth, with real first-mention verses.
->
-> The rest of scripture arrives through phase 2, **by editing the data files only**. No
-> code changes needed.
+> **⚠ THE WALK HAS STARTED — GENESIS 1.** The Bible is being entered verse by verse,
+> starting at the beginning. Genesis 1 names **no people** — it names things (Day, Night,
+> Heaven, Earth, Seas) and creates "man… male and female" without naming either — so
+> `data/people.json` is currently **empty** and the tree has nobody on it yet. The first
+> named person arrives in Genesis 2 (Adam is first called *Adam* at Genesis 2:19, not
+> before). People are added **only by editing the data files** — no code changes needed.
+> The retired phase-1 demo family (the invented "Vell" dynasty) lives on only as a test
+> fixture inside `tests/data.test.js`, keeping the search/filter engine tests honest.
 
 ## Run it
 
@@ -163,7 +157,7 @@ backdrop closes it.
 
 A name matches as a whole phrase, ignoring case: `Adam` matches "Adam" and "Adam's" but
 never "adamant", and a hyphenated compound is one word (`Cain` does not match inside
-"Tubal-cain"). A multi-word name such as `Garrow Vell` matches only as those words side by
+"Tubal-cain"). A multi-word name matches only as those words side by
 side. Where names overlap, the longest wins.
 
 Each occurrence is then resolved to **exactly one** person, in this order:
@@ -237,7 +231,7 @@ so their cards are easy to tell apart at a glance.
 | `spousesState` | optional `"known"` \| `"none"` \| `"unknown"` | Absent = `"known"` (the list is authoritative). `"none"` = affirmatively never married. `"unknown"` = don't know whether they married. |
 | `childrenState` | optional `"known"` \| `"none"` \| `"unknown"` | Same default. `"none"` = affirmatively childless. `"unknown"` = don't know whether they had children. |
 | `siblingsState` | optional `"known"` \| `"none"` \| `"unknown"` | Same default. `"none"` = affirmatively an only child. |
-| `firstMention` | single verse ref, **always filled** | The first verse where the person's name is **stated**, e.g. `"Genesis 2:19"` (where "Adam" is first named). Not where they are first *implied* ("the man", "his wife"). Exactly one verse: `Book C:V`; ranges (`Genesis 1:1-2`), lists and whole chapters are rejected. On the mock Vell family these are demo placeholders. |
+| `firstMention` | single verse ref, **always filled** | The first verse where the person's name is **stated**, e.g. `"Genesis 2:19"` (where "Adam" is first named). Not where they are first *implied* ("the man", "his wife"). Exactly one verse: `Book C:V`; ranges (`Genesis 1:1-2`), lists and whole chapters are rejected. |
 | `notes`      | array (use `[]` for none)     | Zero, one, or several notes. Each renders as its own entry. See below. |
 
 ### Unknown vs None

@@ -162,7 +162,8 @@
       message ? el('code', { text: message }) : null,
       withRetry ? el('p', null, [el('button', { class: 'btn', type: 'button', onclick: load, text: 'Retry' })]) : null
     ]));
-    els.resultsCount.textContent = kind === 'error' ? 'No data loaded' : '';
+    els.resultsCount.textContent = kind === 'error' ? 'No data loaded'
+      : kind === 'empty' ? 'No people yet' : '';
   }
 
   var mentionsPromise = null;
@@ -1123,7 +1124,9 @@
 
     els.resultsCount.textContent = active
       ? matches.length + (matches.length === 1 ? ' match' : ' matches')
-      : 'All ' + matches.length + ' people';
+      : matches.length
+        ? 'All ' + matches.length + ' people'
+        : 'No people yet';
     updateFilterBadge(matches.length);
 
     if (!matches.length) {
