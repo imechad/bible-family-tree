@@ -4,6 +4,8 @@
  *
  * people.json is re-read on every /api/people request so that data entry is
  * "edit the file, refresh the browser" — no restart, no build step.
+ * mentions.json (optional repeated-name overrides) is served the same way
+ * from /api/mentions; a missing file means "no overrides" ({}).
  */
 'use strict';
 
@@ -18,6 +20,7 @@ const PORT = process.env.PORT !== undefined ? Number(process.env.PORT) : 8095;
 const HOST = process.env.HOST || '0.0.0.0';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'data', 'people.json');
+const MENTIONS_FILE = process.env.MENTIONS_FILE || path.join(__dirname, 'data', 'mentions.json');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -58,6 +61,27 @@ function handleApiPeople(res) {
   });
 }
 
+// mentions.json is optional (repeated-name overrides), so a missing file is
+// simply "no overrides": 200 with {}. Re-read per request, like people.json.
+function handleApiMentions(res) {
+  fs.readFile(MENTIONS_FILE, 'utf8', (err, raw) => {
+    if (err) {
+      if (err.code === 'ENOENT') return sendJson(res, 200, {});
+      return sendJson(res, 500, { error: `Could not read mentions file: ${err.code || err.message}` });
+    }
+    let mentions;
+    try {
+      mentions = JSON.parse(raw);
+    } catch (e) {
+      return sendJson(res, 500, { error: `data/mentions.json is not valid JSON: ${e.message}` });
+    }
+    if (!mentions || typeof mentions !== 'object' || Array.isArray(mentions)) {
+      return sendJson(res, 500, { error: 'data/mentions.json must be a JSON object keyed by verse ("Book C:V")' });
+    }
+    sendJson(res, 200, mentions);
+  });
+}
+
 function serveStatic(urlPath, res) {
   let rel;
   try {
@@ -94,6 +118,7 @@ const server = http.createServer((req, res) => {
     }
     const urlPath = new URL(req.url, 'http://localhost').pathname;
     if (urlPath === '/api/people') return handleApiPeople(res);
+    if (urlPath === '/api/mentions') return handleApiMentions(res);
     serveStatic(urlPath, res);
   } catch (e) {
     // Last-resort guard: one bad request must never take the server down.

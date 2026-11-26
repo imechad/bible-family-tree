@@ -195,6 +195,40 @@ fieldset.fp-field legend { padding: 0; margin-bottom: 4px; }
 }
 .fp-count { color: var(--muted); font-size: .92rem; }
 
+/* ---------- Bible reader (reuses the filter panel's popover / sheet) ---------- */
+.reader-panel { width: 560px; height: min(640px, calc(100dvh - 90px)); }
+.rp-head { gap: 6px; flex-wrap: nowrap; padding: 10px 10px 8px 12px; border-bottom: 1px solid var(--border); }
+.rp-book {
+  flex: 1 1 0; min-width: 84px;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  font-size: 1rem; padding: 6px 8px;
+}
+.rp-book:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rp-stepper { display: flex; align-items: center; gap: 4px; }
+.rp-stepper .btn { font-size: 1.15rem; line-height: 1; padding: 4px 10px; }
+.rp-stepper .btn:disabled { opacity: .4; cursor: default; }
+.rp-where { min-width: 6.5em; text-align: center; font-weight: 600; white-space: nowrap; }
+.rp-body { display: block; flex: 1 1 auto; min-height: 0; padding: 14px 18px 18px; outline: none; }
+.rp-text { font-family: Georgia, 'Times New Roman', serif; font-size: 1.08rem; line-height: 1.75; }
+.rp-verse { border-radius: 4px; transition: background-color .6s; }
+.rp-verse .vnum { color: var(--muted); font-family: system-ui, sans-serif; font-size: .68em; font-weight: 600; margin-right: 3px; vertical-align: super; line-height: 0; }
+.rp-verse.rp-mark { background: rgba(242, 193, 78, .22); box-shadow: 0 0 0 3px rgba(242, 193, 78, .22); }
+.rp-status { color: var(--muted); padding: 12px 0; }
+.rp-status .btn { margin-top: 8px; }
+/* A tappable name: a button styled as an underlined, highlighted word. */
+.name-hl {
+  font: inherit; color: var(--accent);
+  background: rgba(242, 193, 78, .12); border: none; border-radius: 3px;
+  padding: 0 2px; margin: 0; cursor: pointer;
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;
+}
+.name-hl:hover, .name-hl:focus-visible { background: rgba(242, 193, 78, .28); outline: none; }
+.name-hl.sample { cursor: default; font-size: inherit; }
+.rp-foot .fp-count { font-size: .82rem; }
+.fm-links { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; }
+.read-link { white-space: nowrap; }
+
 .btn {
   background: var(--panel-2);
   border: 1px solid var(--border);
@@ -521,6 +555,11 @@ fieldset.fp-field legend { padding: 0; margin-bottom: 4px; }
     background: var(--border); margin: 8px auto 0;
   }
   .filter-backdrop { background: rgba(0, 0, 0, .45); }
+  .reader-panel { height: 85dvh; max-height: 85dvh; }
+  .rp-body { padding: 12px 14px 16px; }
+  .rp-head { padding: 8px 8px 8px 10px; }
+  .rp-where { min-width: 5.2em; font-size: .92rem; }
+  .rp-stepper .btn { padding: 4px 8px; }
 
   .layout { flex-direction: column; }
 

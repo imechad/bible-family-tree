@@ -1,0 +1,36 @@
+# FOLLOW-UP PASS (v1.7.0, same PR): 3 fixes on top of the reader build
+
+Repo: /home/imebored/bible-family-tree, branch feat/same-name-people (work sits on the
+just-built reader feature; tests are 59/59 green — keep them green, add where noted).
+Do NOT git commit/push. Do NOT touch public/kjv/* or data/people.json.
+
+## 1. Serve the mentions overrides: add GET /api/mentions to server.js
+
+The reader build made the app fetch GET /api/mentions for the repeated-name overrides
+(currently 404 = treated as empty). Make it real, modelled on the existing
+handleApiPeople: read data/mentions.json fresh on every request (edit file, refresh —
+same philosophy as people.json); missing file -> 200 with {} (NOT 404); malformed JSON
+-> 500 with a clear error message like the people.json path does; no-store caching.
+Keep every existing behavior intact (the server tests must stay green — add one small
+test: absent file yields {}; if cheap, also malformed yields 500). Update README so the
+"Reading the Bible" section no longer calls this a limitation — /api/mentions is live,
+data/mentions.json is the phase-2 contract (keep the copy-paste example).
+
+## 2. KJV punctuation spacing in the reader
+
+The bundled KJV text has space-before-punctuation artifacts ("said she , hath",
+"LORD ."). Clean it at RENDER time in the reader (do not rewrite the data files):
+collapse a space before , . ; : ! ? and any stray double spaces, when displaying each
+verse. Keep it simple and ES5-flavored, applied where verse text is turned into DOM.
+
+## 3. Detail panel gender bug
+
+In renderDetail (public/app.js), gender "unknown" renders as the literal text
+"[object HTMLSpanElement]" — a span element is being passed where a text string is
+expected. Fix so unknown gender shows the same styled dashed "Unknown" the other
+fields use (the tree cards already render it correctly — mirror that).
+
+## Definition of done
+
+`node tests/data.test.js` all green (59 + any new server test), and a short self-report:
+files changed, test count. The orchestrator will browser-verify all three.

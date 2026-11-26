@@ -47,7 +47,16 @@
     status: $('status'),
     detail: $('detail'),
     detailBody: $('detail-body'),
-    detailClose: $('detail-close')
+    detailClose: $('detail-close'),
+    bibleBtn: $('bible-btn'),
+    readerPanel: $('reader-panel'),
+    readerBackdrop: $('reader-backdrop'),
+    readerClose: $('reader-close'),
+    readerBook: $('reader-book'),
+    readerPrev: $('reader-prev'),
+    readerNext: $('reader-next'),
+    readerWhere: $('reader-where'),
+    readerBody: $('reader-body')
   };
 
   var state = {
@@ -57,7 +66,10 @@
     nodeEls: new Map(),   // id -> [card elements]; a remarried person has one per union
     unionEls: [],     // [{ els: [svg nodes], members: [ids] }] for highlight toggling
     selectedId: null,
-    zoom: 1
+    zoom: 1,
+    // data/mentions.json: { "<Book C:V>": { "<display name>": "<person id>" } }.
+    // Resolves repeated names in later verses; absent = empty.
+    mentions: {}
   };
 
   var narrowMQ = window.matchMedia('(max-width: 820px)');
@@ -153,8 +165,26 @@
     els.resultsCount.textContent = kind === 'error' ? 'No data loaded' : '';
   }
 
+  var mentionsPromise = null;
+
+  /** Fetched once per page load. A missing file (404) or junk is simply
+   *  "no overrides": repeated names then stay plain text in the reader. */
+  function loadMentions() {
+    if (!mentionsPromise) {
+      mentionsPromise = fetch('/api/mentions', { cache: 'no-store' })
+        .then(function (res) { return res.ok ? res.json() : {}; })
+        .catch(function () { return {}; })
+        .then(function (m) {
+          state.mentions = m && typeof m === 'object' && !Array.isArray(m) ? m : {};
+          return state.mentions;
+        });
+    }
+    return mentionsPromise;
+  }
+
   function load() {
     showStatus('loading', 'Loading family…');
+    loadMentions();
     fetch('/api/people', { cache: 'no-store' })
       .then(function (res) {
         return res.text().then(function (body) {
@@ -183,6 +213,11 @@
     state.people = Array.from(index.byId.values());
 
     renderWarning(problems);
+    loadMentions().then(function (m) {
+      if (state.index !== index || !Object.keys(m).length) return;
+      var extra = F.validateMentions(m, index);
+      if (extra.length) renderWarning(problems.concat(extra));
+    });
 
     if (state.people.length === 0) {
       showStatus('empty', 'No people yet', 'data/people.json is an empty list. Add a person to get started.');
@@ -194,8 +229,10 @@
     renderTree();
     applyFilters();
 
+    var readRef = refFromHash();
     var fromHash = idFromHash();
-    if (fromHash && state.index.byId.has(fromHash)) select(fromHash, { scroll: true });
+    if (readRef) { scrollToTop(); openReader(readRef); }
+    else if (fromHash && state.index.byId.has(fromHash)) select(fromHash, { scroll: true });
     else scrollToTop();
   }
 
@@ -609,6 +646,8 @@
   function select(id, opts) {
     if (!state.index || !state.index.byId.has(id)) return;
     opts = opts || {};
+    // The person hash replaces a reader hash: never both at once.
+    if (!els.readerPanel.hidden) closeReader({ keepHash: true });
     state.selectedId = id;
     var related = relatedIds(id);
     // Every copy of a remarried person lights up, so it's obvious the two
@@ -650,7 +689,8 @@
     state.nodeEls.forEach(function (nodes) { nodes.forEach(function (n) { n.classList.remove('selected', 'related'); }); });
     state.unionEls.forEach(function (u) { u.els.forEach(function (n) { n.classList.remove('active'); }); });
     markCurrentResult();
-    if (history.replaceState) history.replaceState(null, '', location.pathname + location.search);
+    // Only clear a person hash; an open reader owns the hash while it's up.
+    if (history.replaceState && /^#person=/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
   }
 
   function idFromHash() {
@@ -678,8 +718,11 @@
     paternal: 'same father'
   };
 
-  function linksOrNone(nodes, noneText) {
-    return nodes.length ? el('div', { class: 'links-list' }, nodes) : el('span', { class: 'none', text: noneText });
+  /** `none` is either fallback text (wrapped in a plain .none span) or a
+   *  ready-made state element (styled None/Unknown span), added as-is. */
+  function linksOrNone(nodes, none) {
+    if (nodes.length) return el('div', { class: 'links-list' }, nodes);
+    return typeof none === 'string' ? el('span', { class: 'none', text: none }) : none;
   }
 
   /** Children list; when someone has kids by more than one partner, each
@@ -713,12 +756,13 @@
 
     var fields = el('dl', { class: 'fields' }, [
       el('dt', { text: 'Generation' }), el('dd', null, [F.isPositiveInt(p.generation) ? String(p.generation) : p.generation === "unknown" ? el('span', { class: 'none dashed', text: 'Unknown' }) : '?']),
-      el('dt', { text: 'Gender' }), el('dd', { text: p.gender === "unknown" ? el('span', { class: 'none dashed', text: 'Unknown' }) : genderLabel(p.gender) }),
+      el('dt', { text: 'Gender' }), el('dd', null, [p.gender === "unknown" ? el('span', { class: 'none dashed', text: 'Unknown' }) : genderLabel(p.gender)]),
       el('dt', { text: 'Age' }), el('dd', null, [p.age === "unknown" ? el('span', { class: 'none dashed', text: 'Unknown' }) : typeof p.age === 'number' ? p.age + ' years' : el('span', { class: 'none', text: 'Not recorded' })]),
       el('dt', { text: 'Mom' }), el('dd', null, [parentLink(p.mom)]),
       el('dt', { text: 'Dad' }), el('dd', null, [parentLink(p.dad)]),
       el('dt', { text: 'Spouses' }), el('dd', null, [linksOrNone(idx.spousesOf.get(id).map(function (s) { return personLink(s); }), p.spousesState === "none" ? el('span', { class: 'none solid', text: 'None' }) : p.spousesState === "unknown" ? el('span', { class: 'none dashed', text: 'Unknown' }) : 'None recorded')]),
       el('dt', { text: 'Children' }), el('dd', null, [linksOrNone(childLinks(p), p.childrenState === "none" ? el('span', { class: 'none solid', text: 'None' }) : p.childrenState === "unknown" ? el('span', { class: 'none dashed', text: 'Unknown' }) : 'None recorded')]),
+      el('dt', { text: 'First mention' }), el('dd', null, [firstMentionLinks(p)]),
       el('dt', { text: 'Siblings' }), el('dd', null, [linksOrNone(idx.siblingsOf.get(id).map(function (s) { return personLink(s.id, SIBLING_KIND[s.kind]); }), 'None recorded')])
     ]);
 
@@ -778,6 +822,7 @@
   els.detailClose.addEventListener('click', closeDetail);
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
+    if (!els.readerPanel.hidden) { closeReader({ restoreFocus: true }); return; }
     // The filter panel sits on top, so Escape closes it first.
     if (!els.filterPanel.hidden) { closeFilterPanel(true); return; }
     if (!els.detail.hidden) closeDetail();
@@ -1016,6 +1061,7 @@
   }
 
   function openFilterPanel() {
+    if (!els.readerPanel.hidden) closeReader();
     els.filterPanel.hidden = false;
     // The dimming backdrop is only for the phone sheet; on desktop an outside
     // click is caught by the document listener and still reaches its target.
@@ -1148,12 +1194,274 @@
   window.addEventListener('resize', function () {
     // Rotating a tablet can cross the phone breakpoint with the panel open.
     if (!els.filterPanel.hidden) els.filterBackdrop.hidden = !narrowMQ.matches;
+    if (!els.readerPanel.hidden) els.readerBackdrop.hidden = !narrowMQ.matches;
     positionFilterPanel();
+    positionReaderPanel();
   });
   els.resultsToggle.addEventListener('click', function () {
     setResultsCollapsed(!els.resultsPane.classList.contains('collapsed'));
   });
+  // ---------------------------------------------------------------- Bible reader
+
+  // KJV text lives in /kjv/<slug>.json (one file per book, verse n = index n-1)
+  // with /kjv/index.json listing the 66 books in canonical order. Each file is
+  // fetched the first time its book is opened and kept for the session.
+  var reader = {
+    books: null,          // [{ book, slug, chapters }] from index.json
+    booksPromise: null,
+    bookFiles: new Map(), // slug -> Promise of the parsed book
+    book: 'Genesis',
+    chapter: 1,
+    verse: null,
+    token: 0,             // drops stale renders when chapters are clicked quickly
+    markTimer: null
+  };
+
+  function okJson(res) {
+    if (!res.ok) throw new Error('Server responded ' + res.status);
+    return res.json();
+  }
+
+  function loadBooks() {
+    if (!reader.booksPromise) {
+      reader.booksPromise = fetch('/kjv/index.json').then(okJson).then(function (list) {
+        if (!Array.isArray(list) || !list.length) throw new Error('kjv/index.json has no books');
+        reader.books = list;
+        els.readerBook.replaceChildren.apply(els.readerBook, list.map(function (b) {
+          return el('option', { value: b.book, text: b.book });
+        }));
+        return list;
+      });
+      // A failed fetch shouldn't be cached forever; Retry fetches again.
+      reader.booksPromise.catch(function () { reader.booksPromise = null; });
+    }
+    return reader.booksPromise;
+  }
+
+  function loadBook(slug) {
+    if (!reader.bookFiles.has(slug)) {
+      var p = fetch('/kjv/' + slug + '.json').then(okJson);
+      reader.bookFiles.set(slug, p);
+      p.catch(function () { reader.bookFiles.delete(slug); });
+    }
+    return reader.bookFiles.get(slug);
+  }
+
+  function bookInfo(name) {
+    var slug = F.bookSlug(name);
+    return (reader.books || []).filter(function (b) { return b.slug === slug; })[0] || null;
+  }
+
+  /** "#read=Genesis+2:19": spaces as '+', the colon left readable. */
+  function readHash(ref) {
+    return '#read=' + encodeURIComponent(ref).replace(/%20/g, '+').replace(/%3A/gi, ':');
+  }
+
+  function refFromHash() {
+    var m = /^#read=(.+)$/.exec(location.hash);
+    if (!m) return null;
+    try { return F.parseRef(decodeURIComponent(m[1].replace(/\+/g, ' '))); } catch (e) { return null; }
+  }
+
+  function currentReadRef() {
+    return F.formatRef({ book: reader.book, chapter: reader.chapter, verse: reader.verse });
+  }
+
+  function positionReaderPanel() {
+    if (els.readerPanel.hidden || narrowMQ.matches) return;
+    var r = els.bibleBtn.getBoundingClientRect();
+    // Wider than the filter popover: hang it from the button's left edge,
+    // pulled back left only as far as needed to stay on screen.
+    var w = els.readerPanel.offsetWidth;
+    var left = Math.min(Math.round(r.left), window.innerWidth - w - 8);
+    els.readerPanel.style.top = Math.round(r.bottom + 8) + 'px';
+    els.readerPanel.style.left = Math.max(8, left) + 'px';
+    els.readerPanel.style.right = 'auto';
+  }
+
+  /** Open at a parsed ref ({ book, chapter, verse|null }); with no ref,
+   *  resume wherever the reader was last (Genesis 1 the first time). */
+  function openReader(ref) {
+    closeFilterPanel(false);
+    var wasOpen = !els.readerPanel.hidden;
+    els.readerPanel.hidden = false;
+    els.readerBackdrop.hidden = !narrowMQ.matches;
+    els.bibleBtn.setAttribute('aria-expanded', 'true');
+    positionReaderPanel();
+    if (!wasOpen) els.readerBody.focus({ preventScroll: true });
+    if (ref) showChapter(ref.book, ref.chapter, ref.verse || null);
+    else showChapter(reader.book, reader.chapter, null);
+  }
+
+  /** opts.keepHash: someone else (select) is about to set the hash.
+   *  Otherwise the reader's hash goes; a still-selected person gets theirs back. */
+  function closeReader(opts) {
+    opts = opts || {};
+    if (els.readerPanel.hidden) return;
+    els.readerPanel.hidden = true;
+    els.readerBackdrop.hidden = true;
+    els.bibleBtn.setAttribute('aria-expanded', 'false');
+    reader.token++;
+    if (!opts.keepHash && history.replaceState && /^#read=/.test(location.hash)) {
+      history.replaceState(null, '', state.selectedId
+        ? '#person=' + encodeURIComponent(state.selectedId)
+        : location.pathname + location.search);
+    }
+    if (opts.restoreFocus) els.bibleBtn.focus({ preventScroll: true });
+  }
+
+  function readerMessage(text, retry) {
+    els.readerBody.replaceChildren(el('div', { class: 'rp-status' }, [
+      el('p', { text: text }),
+      retry ? el('button', { class: 'btn', type: 'button', onclick: retry, text: 'Retry' }) : null
+    ]));
+  }
+
+  /** Neighbouring chapter, crossing book boundaries; null at either end. */
+  function stepChapter(dir) {
+    var books = reader.books || [];
+    var i = books.indexOf(bookInfo(reader.book));
+    if (i === -1) return null;
+    var ch = reader.chapter + dir;
+    if (ch >= 1 && ch <= books[i].chapters) return { book: books[i].book, chapter: ch };
+    var nb = books[i + dir];
+    if (!nb) return null;
+    return { book: nb.book, chapter: dir > 0 ? 1 : nb.chapters };
+  }
+
+  function updateStepper() {
+    els.readerWhere.textContent = reader.book + ' ' + reader.chapter;
+    els.readerPrev.disabled = !stepChapter(-1);
+    els.readerNext.disabled = !stepChapter(1);
+  }
+
+  function showChapter(book, chapter, verse) {
+    var token = ++reader.token;
+    reader.book = book;
+    reader.chapter = chapter;
+    reader.verse = verse || null;
+    if (history.replaceState) history.replaceState(null, '', readHash(currentReadRef()));
+    els.readerWhere.textContent = book + ' ' + chapter;
+    readerMessage('Loading ' + book + ' ' + chapter + '…');
+    var retry = function () { showChapter(book, chapter, verse); };
+    loadBooks().then(function () {
+      var info = bookInfo(book);
+      if (!info) throw new Error('“' + book + '” isn’t in the KJV book list.');
+      if (token !== reader.token) return null;
+      els.readerBook.value = info.book;
+      updateStepper();
+      if (chapter > info.chapters) {
+        readerMessage(info.book + ' has ' + info.chapters + ' chapter' + (info.chapters === 1 ? '' : 's') + '.');
+        return null;
+      }
+      return Promise.all([loadBook(info.slug), loadMentions()]).then(function (r) {
+        if (token !== reader.token) return;
+        renderChapter(r[0], info.book, chapter, verse);
+      });
+    }).catch(function (err) {
+      if (token !== reader.token) return;
+      readerMessage('Couldn’t load ' + book + ' ' + chapter + ': ' + (err && err.message ? err.message : String(err)), retry);
+    });
+  }
+
+  /** The bundled KJV has spacing artifacts ("said she , hath", "LORD ."):
+   *  drop the space before punctuation and collapse double spaces. Display
+   *  only; the data files stay untouched. Done before name matching so the
+   *  match offsets line up with the text actually shown. */
+  function tidyVerse(s) {
+    return String(s == null ? '' : s).replace(/\s+([,.;:!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+  }
+
+  function renderChapter(data, book, chapter, verse) {
+    var verses = data && Array.isArray(data.chapters) ? data.chapters[chapter - 1] : null;
+    if (!Array.isArray(verses)) { readerMessage(book + ' ' + chapter + ' isn’t in the KJV file.'); return; }
+    var marked = null;
+    var text = el('div', { class: 'rp-text', lang: 'en' }, verses.map(function (raw, i) {
+      var vt = tidyVerse(raw);
+      var n = i + 1;
+      var ref = book + ' ' + chapter + ':' + n;
+      var parts = [el('sup', { class: 'vnum', text: String(n) })];
+      var occ = state.index ? F.findNameOccurrences(vt, state.index, ref, state.mentions) : [];
+      var last = 0;
+      occ.forEach(function (o) {
+        if (o.start > last) parts.push(vt.slice(last, o.start));
+        parts.push(el('button', {
+          type: 'button',
+          class: 'name-hl',
+          title: 'Show ' + displayName(o.person) + ' in the family tree',
+          onclick: function () { goToPerson(o.person.id); }
+        }, [o.text]));
+        last = o.end;
+      });
+      if (last < vt.length) parts.push(vt.slice(last));
+      parts.push(' ');
+      var span = el('span', { class: 'rp-verse', 'data-verse': String(n), id: 'v' + n }, parts);
+      if (verse === n) marked = span;
+      return span;
+    }));
+    els.readerBody.replaceChildren(text);
+    clearTimeout(reader.markTimer);
+    if (marked) {
+      marked.classList.add('rp-mark');
+      // After layout, so the sheet/popover has its final size.
+      requestAnimationFrame(function () { marked.scrollIntoView({ block: 'center' }); });
+      reader.markTimer = setTimeout(function () { marked.classList.remove('rp-mark'); }, 2600);
+    } else {
+      els.readerBody.scrollTop = 0;
+    }
+  }
+
+  /** Tap on a highlighted name: same flow as tapping a result. */
+  function goToPerson(id) {
+    closeReader({ keepHash: true });
+    select(id, { scroll: true });
+    if (narrowMQ.matches) setResultsCollapsed(true);
+  }
+
+  /** Detail-panel row: the BibleGateway link plus an in-app "read" link. */
+  function firstMentionLinks(p) {
+    var key = F.verseKey(p.firstMention);
+    if (!key) return el('span', { class: 'none', text: 'Not recorded' });
+    return el('span', { class: 'fm-links' }, [
+      refLink(p.firstMention),
+      el('a', {
+        class: 'read-link',
+        href: readHash(key),
+        title: 'Read ' + key + ' (KJV) here',
+        onclick: function (e) {
+          // Handled directly: if the hash already matched, no hashchange would fire.
+          e.preventDefault();
+          openReader(F.parseRef(key));
+        },
+        text: 'Read here'
+      })
+    ]);
+  }
+
+  els.bibleBtn.addEventListener('click', function () {
+    if (els.readerPanel.hidden) openReader(null); else closeReader();
+  });
+  els.readerClose.addEventListener('click', function () { closeReader({ restoreFocus: true }); });
+  els.readerBackdrop.addEventListener('click', function () { closeReader(); });
+  els.readerBook.addEventListener('change', function () { showChapter(els.readerBook.value, 1, null); });
+  els.readerPrev.addEventListener('click', function () {
+    var t = stepChapter(-1);
+    if (t) showChapter(t.book, t.chapter, null);
+  });
+  els.readerNext.addEventListener('click', function () {
+    var t = stepChapter(1);
+    if (t) showChapter(t.book, t.chapter, null);
+  });
+  document.addEventListener('pointerdown', function (e) {
+    if (els.readerPanel.hidden || narrowMQ.matches) return;
+    var t = e.target;
+    if (els.readerPanel.contains(t) || els.bibleBtn.contains(t)) return;
+    closeReader();
+  });
+
   window.addEventListener('hashchange', function () {
+    var ref = refFromHash();
+    if (ref) { openReader(ref); return; }
     var id = idFromHash();
     if (id && id !== state.selectedId) select(id, { scroll: true });
   });

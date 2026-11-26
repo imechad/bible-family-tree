@@ -1,0 +1,16 @@
+# MICRO-FIX: remaining [object HTMLSpanElement] rows in renderDetail (public/app.js)
+
+The gender row is fixed, but in the detail panel of a person whose spouses/children
+state is "unknown" (e.g. cain, abel in data/people.json — their panels currently show
+"[object HTMLSpanElement]" twice), the Spouses and Children rows pass a state span
+element where a text string is expected — the exact bug just fixed for Gender.
+
+Fix: in renderDetail, every row that can render an unknown/none state span (Spouses,
+Children, Siblings, and any other row with the same pattern — audit them all) must add
+the span as an ELEMENT, mirroring the gender fix, so "Unknown"/"None" shows styled like
+Generation/Age rows do. Do not change any other behavior.
+
+Verify: grep the rendered output for "[object" in a headless-ish way is not available to
+you — instead re-read each renderDetail row and confirm no `text:` parameter receives an
+element anywhere in the function. Keep `node tests/data.test.js` fully green (60/60).
+No commit. Self-report: which rows were fixed.

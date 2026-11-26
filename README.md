@@ -5,15 +5,24 @@ generation rows, where each couple's lines meet at a small junction and their ch
 fan out below it, a build-your-own Filters panel where every field has its own controls
 (contains boxes for name/mom/dad, is / is between / is unknown for generation and age, a
 gender dropdown, amount or name for child/sibling/spouse, has / no / contains for notes),
-and a detail panel showing each person's relatives and scripture-cited, AI-gathered notes.
+a detail panel showing each person's relatives and scripture-cited, AI-gathered notes,
+and a built-in KJV Bible reader whose highlighted names jump straight to that person in
+the tree.
 
-> **⚠ Phase 1 — MOCK DATA.** `data/people.json` currently holds an invented demo family
-> (the "Vell" dynasty, 34 people over 7 generations plus one relative of unknown
-> generation, including a remarriage and a childless couple). None of them are Bible
-> characters.
-> The notes are made-up demo text; they cite real Genesis verses only so the verse links
-> can be clicked and checked. Real Bible characters arrive in phase 2, **by editing the
-> data file only**. No code changes needed.
+> **⚠ Phase 1.5 — MOCK DATA + the first real people.** `data/people.json` holds two kinds
+> of people side by side:
+> - **The Vell family is invented demo data** (the "Vell" dynasty, 34 people over 7
+>   generations plus one relative of unknown generation, including a remarriage and a
+>   childless couple). None of them are Bible characters. Their notes are made-up demo
+>   text that cites real Genesis verses only so the links can be clicked and checked,
+>   and their `firstMention` values are **demo placeholders**: real Genesis 4–11 verses
+>   picked so the reader has something to open — their invented names never occur in
+>   scripture.
+> - **Adam's family (Genesis 2–5) is the first real data:** Adam, Eve, Cain, Abel and
+>   Seth, with real first-mention verses.
+>
+> The rest of scripture arrives through phase 2, **by editing the data files only**. No
+> code changes needed.
 
 ## Run it
 
@@ -41,11 +50,14 @@ This checks data integrity: ids are unique, every mom/dad id exists and has the 
 gender and an earlier generation, every spouse id exists and the link is recorded on
 **both** people (female + male), derived children and siblings agree with the parent
 links, every note cites at least one valid reference, and generations are a positive
-integer or `"unknown"`. It also unit-tests union derivation (couples, single parents,
+integer or `"unknown"`, every person has a single-verse `firstMention` that exists in the
+KJV text, and the bundled KJV files are complete (66 books, 31,102 verses). It also unit-tests union derivation (couples, single parents,
 childless couples, remarriage), the junction geometry (pink/blue parent lines meet one
 pill, the children's lines fan out from it, a childless couple keeps the pill with no
 child lines), and the filter builder's logic (every field's operators, blank-row
-inertness, AND-combined rows, and the badge count) and multi-note rendering, then boots
+inertness, AND-combined rows, and the badge count), multi-note rendering and the reader's
+name resolution (unique names, first-mention anchors, `mentions.json` overrides, and
+"ambiguous stays plain text"), then boots
 the server on a free port and checks that `/api/people` returns the
 array and that a malformed file produces an error instead of a crash.
 **Run this after every data edit.** It tells you exactly which person and field is wrong.
@@ -105,8 +117,8 @@ array and that a malformed file produces an error instead of a crash.
   "No one matches these filters" message) does the same. Close the panel with ✕, Escape,
   or a click outside it. On desktop it drops down under the button. On phones it opens
   as a bottom sheet that spans the screen width and scrolls inside itself.
-- **Detail panel:** shows Generation, Gender, Age, Mom, Dad, Spouses, Children and
-  Siblings. Every relative is a clickable link. When someone has children by more than
+- **Detail panel:** shows Generation, Gender, Age, Mom, Dad, Spouses, Children, First
+  mention and Siblings. Every relative is a clickable link. When someone has children by more than
   one partner, each child is tagged `(with <other parent>)`. Siblings are labelled `half · same mother` and so on when
   they share only one parent. On phones the panel becomes a bottom sheet.
 - **AI-gathered notes:** these are marked with a drawn info icon (an inline SVG circled
@@ -119,7 +131,84 @@ array and that a malformed file produces an error instead of a crash.
   Every reference links to that exact passage on BibleGateway (KJV), for example
   `Genesis 4:25` →
   `https://www.biblegateway.com/passage/?search=Genesis%204%3A25&version=KJV`.
-- **Deep links:** `http://localhost:8095/#person=<id>` opens with that person selected.
+- **First mention:** the detail panel's **First mention** row shows the verse where the
+  person is first named, linked twice: `Genesis 2:19 ↗` opens it on BibleGateway, and
+  **Read here** opens the built-in reader at that verse.
+- **Deep links:** `http://localhost:8095/#person=<id>` opens with that person selected;
+  `#read=Genesis+2:19` opens the Bible reader (see below).
+
+## Reading the Bible
+
+The **Bible** button next to **Filters** opens the King James Version inside the app. It
+uses the same panel pattern as Filters: it drops down under the button on desktop and is
+a full-width bottom sheet on phones; ✕, Escape, or a tap outside / on the dimmed
+backdrop closes it.
+
+- **Navigation:** a book dropdown (all 66 books in canonical order) and a chapter stepper
+  (`‹ Genesis 2 ›`). The stepper crosses book boundaries (`›` on Genesis 50 goes to
+  Exodus 1). Each book's text is downloaded the first time it is opened and kept in
+  memory after that.
+- **Deep links:** `#read=Genesis+2` opens Genesis 2; `#read=Genesis+2:19` also scrolls
+  verse 19 into view and briefly highlights it. Book names use the same spellings as
+  everywhere else (`#read=1+Samuel+3:4`, `#read=Song+of+Solomon+1`). Opening the reader
+  puts its location in the address bar; closing it removes it (and restores
+  `#person=<id>` if someone is still selected). A reader link and a person link are never
+  in the address bar at the same time.
+- **Highlighted names:** every name of a documented person (anyone in
+  `data/people.json`) is highlighted in gold. Tap it and the reader closes, and that
+  person is selected exactly as if you had tapped them in the results list: their card
+  is highlighted and scrolled into view and their detail panel opens.
+
+### How a name is matched to a person
+
+A name matches as a whole phrase, ignoring case: `Adam` matches "Adam" and "Adam's" but
+never "adamant", and a hyphenated compound is one word (`Cain` does not match inside
+"Tubal-cain"). A multi-word name such as `Garrow Vell` matches only as those words side by
+side. Where names overlap, the longest wins.
+
+Each occurrence is then resolved to **exactly one** person, in this order:
+
+1. **Only one person has that name** → that person.
+2. **Several people share the name** and this verse is one of their `firstMention`
+   verses (claimed by exactly one of them) → that person. A first-mention verse names
+   its person by definition.
+3. **Several share the name in a later verse** → `data/mentions.json` says who is meant
+   (see below).
+4. **Still ambiguous** → the name is left as **plain text**. The app never guesses and
+   never jumps to "just anyone with that name": a link to the wrong person is worse than
+   no link.
+
+### `data/mentions.json` — resolving repeated names (phase 2)
+
+Optional. When two or more people share a name, list each later verse where the name
+refers to a specific one of them:
+
+```json
+{
+  "John 19:25": { "Mary": "mary-wife-of-clopas" },
+  "Luke 2:5":   { "Mary": "mary-mother-of-jesus", "Joseph": "joseph-husband-of-mary" }
+}
+```
+
+- Keys are single verses (`Book C:V`, same spellings as `refs`; no ranges).
+- Inside each verse, keys are **display names** exactly as in `people.json` (matched
+  ignoring case) and values are person **ids**. The id must belong to someone with that
+  display name.
+- Unique names don't need entries; neither does a person's own `firstMention` verse.
+- `node tests/data.test.js` cross-checks the file (every ref is a real single verse,
+  every id exists and carries that name). A missing file is fine and means "no
+  overrides".
+- **Served live:** the app reads this file through `GET /api/mentions`, which
+  `server.js` re-reads on every request (edit, refresh — same as `people.json`). A
+  missing file returns `{}`; malformed JSON returns a 500 with the parser's message.
+
+### Bible text
+
+The text is the public-domain **King James Version (KJV)**, taken from the
+[thiagobodruk/bible](https://github.com/thiagobodruk/bible) repository and stored as one
+JSON file per book in `public/kjv/` (`{"book":"Genesis","chapters":[["verse 1", …], …]}`,
+verse *n* at index *n−1*) plus `public/kjv/index.json` listing the books in order. The
+server serves them as ordinary static files.
 
 ## Data: `data/people.json`
 
@@ -127,6 +216,11 @@ One flat JSON array, one object per person. **Only parent and spouse links are s
 Children, siblings and unions (each drawn with its own junction) are computed when the page loads. Each parent link
 is written once, on the child. A marriage is written on **both** spouses, so either
 record reads correctly on its own, and the test checks that the two sides agree.
+
+People with the same name are fully supported and stay distinct individuals: every
+link (`mom`, `dad`, `spouses`) is by id, never by name. When two people share a name,
+give them fuller display names (e.g. `"Mary, wife of Clopas"` vs `"Mary Magdalene"`)
+so their cards are easy to tell apart at a glance.
 
 ### Person shape
 
@@ -143,6 +237,7 @@ record reads correctly on its own, and the test checks that the two sides agree.
 | `spousesState` | optional `"known"` \| `"none"` \| `"unknown"` | Absent = `"known"` (the list is authoritative). `"none"` = affirmatively never married. `"unknown"` = don't know whether they married. |
 | `childrenState` | optional `"known"` \| `"none"` \| `"unknown"` | Same default. `"none"` = affirmatively childless. `"unknown"` = don't know whether they had children. |
 | `siblingsState` | optional `"known"` \| `"none"` \| `"unknown"` | Same default. `"none"` = affirmatively an only child. |
+| `firstMention` | single verse ref, **always filled** | The first verse where the person's name is **stated**, e.g. `"Genesis 2:19"` (where "Adam" is first named). Not where they are first *implied* ("the man", "his wife"). Exactly one verse: `Book C:V`; ranges (`Genesis 1:1-2`), lists and whole chapters are rejected. On the mock Vell family these are demo placeholders. |
 | `notes`      | array (use `[]` for none)     | Zero, one, or several notes. Each renders as its own entry. See below. |
 
 ### Unknown vs None
@@ -189,6 +284,7 @@ spouses are in different generations, their union sits on the later generation's
   "mom": "example-mother-id",
   "dad": "example-father-id",
   "spouses": ["example-first-wife-id", "example-second-wife-id"],
+  "firstMention": "Genesis 4:25",
   "notes": [
     {
       "text": "Commentary written by the AI, summarising what the passage says about this person. See also Genesis 5:6.",
@@ -210,19 +306,26 @@ spouses are in different generations, their union sits on the later generation's
 1. Append an object like the one above to the array in `data/people.json`.
 2. Set `mom` / `dad` to existing ids, or `"unknown"`/`"none"` when there is no mother or
    father to name. For a marriage, add each spouse's id to the other's `spouses` list.
-3. Run `node tests/data.test.js` and fix anything it reports.
-4. Refresh the browser.
+3. Set `firstMention` to the first verse that states their name. If someone else
+   already has the same display name, add `data/mentions.json` entries for the later
+   verses where the name means this person (see "Reading the Bible").
+4. Run `node tests/data.test.js` and fix anything it reports.
+5. Refresh the browser.
 
 ## Project layout
 
 ```
 server.js            zero-dependency HTTP server (port 8095), GET /api/people
-data/people.json     ALL people: the only file to edit for new data
+data/people.json     ALL people: the main file to edit for new data
+data/mentions.json   optional: which person a repeated name means in a given verse
 public/index.html    page shell
 public/styles.css    dark, responsive theme (desktop + iPhone)
+public/kjv/          public-domain KJV text, one JSON file per book + index.json
 public/family.js     shared logic: derive children/siblings/spouses and unions,
-                     junction geometry, validate, filter-builder logic, note views, verse links
+                     junction geometry, validate, filter-builder logic, note views, verse links,
+                     ref parsing and name-in-verse resolution for the reader
                      (used by both the browser and the tests)
-public/app.js        union/junction tree layout and rendering, drawn SVG icons, filter builder UI, detail panel
+public/app.js        union/junction tree layout and rendering, drawn SVG icons, filter builder UI,
+                     detail panel, Bible reader
 tests/data.test.js   data integrity + server smoke tests (plain node)
 ```
