@@ -141,15 +141,17 @@ test('spouse links exist, are mutual, and pair a female with a male', () => {
   }
 });
 
-test('empty data is valid: zero people flow through validate, index and unions', () => {
+test('empty data is valid: an empty array flows through validate, index and unions', () => {
   assert.deepStrictEqual(Family.validate([]), []);
   const idx = Family.buildIndex([]);
   assert.strictEqual(idx.byId.size, 0, 'byId empty');
   assert.strictEqual(idx.byName.size, 0, 'byName empty');
   assert.deepStrictEqual(Family.deriveUnions(idx).unions, [], 'no unions');
-  // The real data file is empty right now (Genesis 1 named nobody); the server
-  // smoke test below proves /api/people serves it as-is.
-  assert.deepStrictEqual(people, []);
+  // The real data file held zero people through Genesis 1; from Genesis 2 on it
+  // holds walked people (Adam first). Whatever it holds, it must validate clean:
+  // Family.validate returns [] when there are no problems, and the server smoke
+  // test below proves /api/people serves the file as-is.
+  assert.deepStrictEqual(Family.validate(people), [], 'live people.json validates clean');
 });
 
 test('every note has text and at least one valid scripture ref', () => {

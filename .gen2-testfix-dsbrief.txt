@@ -1,0 +1,47 @@
+DO NOT READ FILES. Your FIRST action is the patch command below.
+
+This is a 2-edit surgical patch to ONE file (tests/data.test.js) in ~/bible-family-tree. Everything is pre-diagnosed; there is nothing to investigate.
+
+RULES:
+- Run the python3 heredoc below AS WRITTEN — never re-type it into python3 -c or echo it.
+- Run it exactly ONCE. Never re-run it (re-running double-applies).
+- If any assert fails, report the counts it printed and STOP.
+- Touch ONLY tests/data.test.js. No other file. No git commands.
+- Output === FINAL === only when the patch has landed AND the verification below passes.
+
+Your first and only edit action:
+
+python3 - <<'PYEOF'
+import io
+p = "tests/data.test.js"
+s = io.open(p, encoding="utf-8").read()
+
+old_title = "test('empty data is valid: zero people flow through validate, index and unions', () => {"
+new_title = "test('empty data is valid: an empty array flows through validate, index and unions', () => {"
+assert s.count(old_title) == 1, "title count=%d" % s.count(old_title)
+s = s.replace(old_title, new_title)
+
+old_block = """  // The real data file is empty right now (Genesis 1 named nobody); the server
+  // smoke test below proves /api/people serves it as-is.
+  assert.deepStrictEqual(people, []);"""
+new_block = """  // The real data file held zero people through Genesis 1; from Genesis 2 on it
+  // holds walked people (Adam first). Whatever it holds, it must validate clean:
+  // Family.validate returns [] when there are no problems, and the server smoke
+  // test below proves /api/people serves the file as-is.
+  assert.deepStrictEqual(Family.validate(people), [], 'live people.json validates clean');"""
+assert s.count(old_block) == 1, "block count=%d" % s.count(old_block)
+s = s.replace(old_block, new_block)
+
+io.open(p, "w", encoding="utf-8", newline="").write(s)
+print("PATCHED tests/data.test.js (2 edits)")
+PYEOF
+
+AFTER the patch, verify (run once each, from ~/bible-family-tree):
+1. grep -c "an empty array flows through" tests/data.test.js   -> must print 1
+2. grep -c "live people.json validates clean" tests/data.test.js   -> must print 1
+3. grep -cF 'assert.deepStrictEqual(people, []);' tests/data.test.js   -> must print 0
+4. node tests/data.test.js   -> must end with: 54/54 passed
+
+If all four pass, output exactly:
+
+=== FINAL ===
