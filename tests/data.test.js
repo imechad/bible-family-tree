@@ -29,7 +29,8 @@ let people;
 test('people.json parses as a JSON array', () => {
   people = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
   assert(Array.isArray(people), 'top level must be an array');
-  assert(people.length > 0, 'array must not be empty');
+  // An EMPTY array is valid during the verse-by-verse walk: Genesis 1 names no
+  // people, so the file stays [] until the first named person (Genesis 2).
 });
 
 test('ids are unique non-empty strings', () => {
@@ -140,16 +141,15 @@ test('spouse links exist, are mutual, and pair a female with a male', () => {
   }
 });
 
-test('demo data exercises remarriage, a childless couple, and multi-note people', () => {
-  const idx = Family.buildIndex(people);
-  const fb = Family.deriveUnions(idx);
-  // Remarriage: someone with 2+ spouses who has children in 2+ of those unions.
-  const remarried = people.filter((p) => p.spouses.length >= 2 &&
-    (fb.unionsOf.get(p.id) || []).filter((b) => b.mom && b.dad && b.children.length).length >= 2);
-  assert(remarried.length >= 1, 'need at least one remarried person with children by two spouses');
-  assert(fb.unions.some((b) => b.mom && b.dad && b.children.length === 0), 'need a married couple with no children');
-  assert(fb.unions.some((b) => !(b.mom && b.dad) && b.children.length), 'need a single-parent family');
-  assert(people.filter((p) => p.notes.length >= 2).length >= 3, 'need at least three people with 2+ notes');
+test('empty data is valid: zero people flow through validate, index and unions', () => {
+  assert.deepStrictEqual(Family.validate([]), []);
+  const idx = Family.buildIndex([]);
+  assert.strictEqual(idx.byId.size, 0, 'byId empty');
+  assert.strictEqual(idx.byName.size, 0, 'byName empty');
+  assert.deepStrictEqual(Family.deriveUnions(idx).unions, [], 'no unions');
+  // The real data file is empty right now (Genesis 1 named nobody); the server
+  // smoke test below proves /api/people serves it as-is.
+  assert.deepStrictEqual(people, []);
 });
 
 test('every note has text and at least one valid scripture ref', () => {
@@ -318,9 +318,9 @@ test('junction geometry: gender-tagged parent lines meet one pill, children fan 
 });
 
 test('search finds parents by a kid\'s name, kids by a parent\'s name, and says why', () => {
-  const idx = Family.buildIndex(people);
-  const names = (q) => Family.search(people, idx, q).map((r) => r.person.id);
-  const why = (q, id) => Family.search(people, idx, q).find((r) => r.person.id === id).reasons.map((r) => r.label);
+  const idx = Family.buildIndex(DEMO);
+  const names = (q) => Family.search(DEMO, idx, q).map((r) => r.person.id);
+  const why = (q, id) => Family.search(DEMO, idx, q).find((r) => r.person.id === id).reasons.map((r) => r.label);
 
   // "Who's got the kid named Briar?" -> Pim, tagged with why.
   assert.deepStrictEqual(names('kid:Briar'), ['pim-vell']);
@@ -343,8 +343,8 @@ test('search finds parents by a kid\'s name, kids by a parent\'s name, and says 
 });
 
 test('search: comma lists match ANY term; prefixes carry over; attributes and notes', () => {
-  const idx = Family.buildIndex(people);
-  const names = (q) => Family.search(people, idx, q).map((r) => r.person.id);
+  const idx = Family.buildIndex(DEMO);
+  const names = (q) => Family.search(DEMO, idx, q).map((r) => r.person.id);
 
   // A list after one prefix stays in that role.
   assert.deepStrictEqual(names('kid:Briar, Wick').sort(), ['pim-vell', 'thistle-arlo']);
@@ -356,7 +356,7 @@ test('search: comma lists match ANY term; prefixes carry over; attributes and no
   assert.deepStrictEqual(Family.parseQuery('Genesis 4:25'), [{ field: 'any', raw: 'Genesis 4:25', value: 'genesis 4:25' }]);
 
   // Free-text list: every listed name and its relatives; own-name hits first.
-  const list = Family.search(people, idx, 'Briar, Wick');
+  const list = Family.search(DEMO, idx, 'Briar, Wick');
   assert.deepStrictEqual(list.slice(0, 2).map((r) => r.person.id).sort(), ['briar-vell', 'wick-arlo']);
   assert(list.some((r) => r.person.id === 'pim-vell' && r.reasons.some((x) => x.label === 'kid: Briar Vell' && x.term === 'Briar')));
   // "wick" inside "Fenwick" still finds Fenwick by name (substring, as before)
@@ -372,32 +372,32 @@ test('search: comma lists match ANY term; prefixes carry over; attributes and no
   assert.deepStrictEqual(names('age:96'), ['garrow-vell']);
   assert(names('age:60-70').every((id) => idx.byId.get(id).age >= 60 && idx.byId.get(id).age <= 70));
   // Notes text (word-start), with a snippet in the reason.
-  const orchard = Family.search(people, idx, 'orchard');
+  const orchard = Family.search(DEMO, idx, 'orchard');
   assert(orchard.some((r) => r.person.id === 'garrow-vell'));
   assert(orchard.every((r) => r.reasons[0].field === 'notes' && r.reasons[0].label.includes('orchard')));
 
   // Empty query: everyone, no reasons, generation order.
-  const all = Family.search(people, idx, '  , ');
-  assert.strictEqual(all.length, people.length);
+  const all = Family.search(DEMO, idx, '  , ');
+  assert.strictEqual(all.length, DEMO.length);
   const rank = (r) => Family.generationRank(r.person.generation);
   assert(all.every((r, i) => !r.reasons.length && (i === 0 || rank(all[i - 1]) <= rank(r))));
   assert.strictEqual(all[all.length - 1].person.id, 'unknown-cousin', 'unknown generation sorts last');
 });
 
 test('filters: age range bounds, blank = unbounded, unknown ages excluded, bounds applied as typed', () => {
-  const idx = Family.buildIndex(people);
-  const ids = (f) => Family.filterSearch(people, idx, '', Object.assign(Family.emptyFilters(), f)).map((r) => r.person.id);
+  const idx = Family.buildIndex(DEMO);
+  const ids = (f) => Family.filterSearch(DEMO, idx, '', Object.assign(Family.emptyFilters(), f)).map((r) => r.person.id);
   const age = (id) => idx.byId.get(id).age;
 
-  // No filters: everyone, including people with no recorded age.
-  assert.strictEqual(ids({}).length, people.length);
+  // No filters: everyone, including DEMO with no recorded age.
+  assert.strictEqual(ids({}).length, DEMO.length);
   // Both ends inclusive.
   const range = ids({ ageMin: '60', ageMax: '70' });
   assert(range.length && range.every((id) => age(id) >= 60 && age(id) <= 70));
   assert(range.includes('tessaly-vell') && range.includes('ebbet-vell') === false, '70 is in, 71 is out');
   assert(range.includes('lisska-arlo') && range.includes('dovrin-arlo'));
   // One end only.
-  // Adam (930) and Seth (912) are the real Genesis seed people.
+  // Adam (930) and Seth (912) are the real Genesis seed DEMO.
   assert.deepStrictEqual(ids({ ageMin: '90' }).sort(), ['adam', 'garrow-vell', 'isoline-ashby', 'seth']);
   assert.deepStrictEqual(ids({ ageMax: '9' }).sort(), ['briar-vell', 'wick-arlo']);
   // Numbers work as well as the strings an <input> yields.
@@ -405,19 +405,19 @@ test('filters: age range bounds, blank = unbounded, unknown ages excluded, bound
   assert.deepStrictEqual(ids({ ageMin: '90', ageMax: '100' }).sort(), ['garrow-vell', 'isoline-ashby']);
   // Unknown age can't be shown to be in range.
   assert(!ids({ ageMin: '0' }).includes('pell-vell') && !ids({ ageMin: '0' }).includes('hale-arlo'));
-  assert.strictEqual(ids({ ageMin: '0' }).length, people.filter((p) => typeof p.age === 'number').length);
+  assert.strictEqual(ids({ ageMin: '0' }).length, DEMO.filter((p) => typeof p.age === 'number').length);
   // Bounds are applied as typed (min above max matches nobody, not a swapped range).
   assert.deepStrictEqual(ids({ ageMin: '70', ageMax: '60' }), []);
   // Junk / half-typed input counts as no bound.
-  assert.strictEqual(ids({ ageMin: '-', ageMax: '' }).length, people.length);
+  assert.strictEqual(ids({ ageMin: '-', ageMax: '' }).length, DEMO.length);
   // A range nobody is in yields nothing (the UI shows its empty state).
   assert.deepStrictEqual(ids({ ageMin: '1000' }), []);
 });
 
 test('filters: has notes / has children / has spouse match the derived data', () => {
-  const idx = Family.buildIndex(people);
-  const ids = (f) => Family.filterSearch(people, idx, '', Object.assign(Family.emptyFilters(), f)).map((r) => r.person.id).sort();
-  const expect = (pred) => people.filter(pred).map((p) => p.id).sort();
+  const idx = Family.buildIndex(DEMO);
+  const ids = (f) => Family.filterSearch(DEMO, idx, '', Object.assign(Family.emptyFilters(), f)).map((r) => r.person.id).sort();
+  const expect = (pred) => DEMO.filter(pred).map((p) => p.id).sort();
 
   assert.deepStrictEqual(ids({ hasNotes: true }), expect((p) => Family.noteViews(p).length > 0));
   assert(ids({ hasNotes: true }).includes('taddeo-vell') && !ids({ hasNotes: true }).includes('maelis-dunhart'));
@@ -441,9 +441,9 @@ test('filters: has notes / has children / has spouse match the derived data', ()
 });
 
 test('filters combine with each other (AND) and with text search; badge count', () => {
-  const idx = Family.buildIndex(people);
+  const idx = Family.buildIndex(DEMO);
   const F = (f) => Object.assign(Family.emptyFilters(), f);
-  const ids = (q, f) => Family.filterSearch(people, idx, q, F(f)).map((r) => r.person.id);
+  const ids = (q, f) => Family.filterSearch(DEMO, idx, q, F(f)).map((r) => r.person.id);
 
   // Every filter at once: gen 4 women aged 70+ with notes, children and a spouse.
   assert.deepStrictEqual(ids('', { gen: '4', gender: 'female', ageMin: '70', hasNotes: true, hasChildren: true, hasSpouse: true }), ['wrenna-vell']);
@@ -456,9 +456,9 @@ test('filters combine with each other (AND) and with text search; badge count', 
   assert(kidsAndSpouse.length < kids.length && kidsAndSpouse.every((id) => kids.includes(id)));
   assert(!kidsAndSpouse.includes('pell-vell') && !kidsAndSpouse.includes('corwin-vell'));
 
-  // Search keeps its order and match reasons; filters only drop people.
-  const plain = Family.search(people, idx, 'Briar, Wick');
-  const filtered = Family.filterSearch(people, idx, 'Briar, Wick', F({ hasNotes: true }));
+  // Search keeps its order and match reasons; filters only drop DEMO.
+  const plain = Family.search(DEMO, idx, 'Briar, Wick');
+  const filtered = Family.filterSearch(DEMO, idx, 'Briar, Wick', F({ hasNotes: true }));
   assert.deepStrictEqual(filtered.map((r) => r.person.id), plain.filter((r) => Family.noteViews(r.person).length).map((r) => r.person.id));
   assert(filtered.find((r) => r.person.id === 'briar-vell').reasons.some((x) => x.field === 'name'));
   // A prefix search narrowed by a filter: Briar's parents who are male.
@@ -493,8 +493,8 @@ test('multi-note people: each note keeps its own text, quotes, and linked refs',
   assert.deepStrictEqual(Family.noteViews({ notes: [] }), []);
   assert.deepStrictEqual(Family.noteViews({}), []);
 
-  // And in the real data, a multi-note person gets one view per stored note.
-  const taddeo = people.find((p) => p.id === 'taddeo-vell');
+  // And in the retired demo family, a multi-note person gets one view per stored note.
+  const taddeo = DEMO.find((p) => p.id === 'taddeo-vell');
   assert.strictEqual(Family.noteViews(taddeo).length, taddeo.notes.length);
   assert(taddeo.notes.length >= 2);
 });
@@ -557,10 +557,6 @@ async function withServer(env, fn) {
 
 // ------------------------------------------------------------------ new explicit state tests
 
-test('people count: 34 mock Vells (incl. the unknown cousin) + 5 real Genesis people = 39', () => {
-  assert.strictEqual(people.length, 39, 'should have 39 people (34 demo + Adam, Eve, Cain, Abel, Seth)');
-});
-
 test('new explicit unknown/none states are accepted', () => {
   for (const p of people) {
     // Check mom/dad states
@@ -597,48 +593,6 @@ test('new explicit unknown/none states are accepted', () => {
     assert(p.siblingsState === undefined || ['known', 'none', 'unknown'].includes(p.siblingsState), 
            `${p.id}: siblingsState must be "known", "none", or "unknown"`);
   }
-});
-
-test('demo story requirements are met', () => {
-  // Gen-1 founders have mom/dad "none" or "unknown" (if they have children)
-  const founders = people.filter(p => p.generation === 1);
-  for (const founder of founders) {
-    // First-of-line founders affirmatively have no parents, children or not
-    assert.strictEqual(founder.mom, "none", `${founder.id}: gen-1 founder should have mom="none"`);
-    assert.strictEqual(founder.dad, "none", `${founder.id}: gen-1 founder should have dad="none"`);
-  }
-  
-  // At least one person has gender "unknown"
-  const unknownGender = people.filter(p => p.gender === "unknown");
-  assert(unknownGender.length >= 1, 'should have at least one person with gender="unknown"');
-  
-  // At least one person has age "unknown"
-  const unknownAge = people.filter(p => p.age === "unknown");
-  assert(unknownAge.length >= 1, 'should have at least one person with age="unknown"');
-  
-  // Check list state diversity
-  const noneChildren = people.filter(p => p.childrenState === "none");
-  const unknownChildren = people.filter(p => p.childrenState === "unknown");
-  const noneSpouses = people.filter(p => p.spousesState === "none");
-  const unknownSpouses = people.filter(p => p.spousesState === "unknown");
-  const noneSiblings = people.filter(p => p.siblingsState === "none");
-  
-  assert(noneChildren.length >= 1, 'should have at least one person with childrenState="none"');
-  assert(unknownChildren.length >= 1, 'should have at least one person with childrenState="unknown"');
-  assert(noneSpouses.length >= 1, 'should have at least one person with spousesState="none"');
-  assert(unknownSpouses.length >= 1, 'should have at least one person with spousesState="unknown"');
-  assert(noneSiblings.length >= 1, 'should have at least one person with siblingsState="none"');
-  
-  // Check the new unknown cousin
-  const unknownCousin = people.find(p => p.id === "unknown-cousin");
-  assert(unknownCousin, 'should have the unknown-cousin person');
-  assert.strictEqual(unknownCousin.gender, "unknown", 'unknown-cousin should have gender="unknown"');
-  assert.strictEqual(unknownCousin.age, "unknown", 'unknown-cousin should have age="unknown"');
-  assert.strictEqual(unknownCousin.mom, "unknown", 'unknown-cousin should have mom="unknown"');
-  assert.strictEqual(unknownCousin.dad, "unknown", 'unknown-cousin should have dad="unknown"');
-  assert.strictEqual(unknownCousin.childrenState, "unknown", 'unknown-cousin should have childrenState="unknown"');
-  assert.strictEqual(unknownCousin.spousesState, "unknown", 'unknown-cousin should have spousesState="unknown"');
-  assert.strictEqual(unknownCousin.siblingsState, "unknown", 'unknown-cousin should have siblingsState="unknown"');
 });
 
 test('Family.validate accepts the new states', () => {
@@ -723,14 +677,19 @@ test('invalid state combinations are rejected', () => {
          'Should detect invalid list state value');
 });
 
+// DEMO: the retired phase-1 family (34 Vells + the Genesis seed), recovered from git
+// history so the search/filter ENGINE tests keep running against the exact data
+// they were written for. data/people.json itself stays empty during the walk.
+const DEMO = [{"id":"garrow-vell","name":"Garrow Vell","firstMention":"Genesis 4:17","gender":"male","generation":1,"age":96,"mom":"none","dad":"none","spouses":["isoline-ashby"],"notes":[{"text":"DEMO NOTE: In this invented family saga, Garrow is the founder of the Vell house and is said to have planted the first orchard on the hill farm. The verse below is attached only to show how a quoted citation renders.","quotes":[{"ref":"Genesis 1:11","text":"And God said, Let the earth bring forth grass, the herb yielding seed, and the fruit tree yielding fruit after his kind, whose seed is in itself, upon the earth: and it was so."}],"refs":["Genesis 1:11"]},{"text":"DEMO NOTE: A second note with two references and no quote, to show a note can cite several passages (compare Genesis 2:15 with Genesis 8:22).","refs":["Genesis 2:15","Genesis 8:22"]}],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"isoline-ashby","name":"Isoline Ashby","firstMention":"Genesis 4:18","gender":"female","generation":1,"age":91,"mom":"none","dad":"none","spouses":["garrow-vell"],"notes":[{"text":"DEMO NOTE: Fictional matriarch of the demo family. The made-up story says she kept the household ledger and named every grandchild.","quotes":[{"ref":"Genesis 1:28","text":"And God blessed them, and God said unto them, Be fruitful, and multiply, and replenish the earth, and subdue it: and have dominion over the fish of the sea, and over the fowl of the air, and over every living thing that moveth upon the earth."}],"refs":["Genesis 1:28"]}],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"bram-vell","name":"Bram Vell","firstMention":"Genesis 4:19","gender":"male","generation":2,"age":78,"mom":"isoline-ashby","dad":"garrow-vell","spouses":["maelis-dunhart"],"notes":[{"text":"DEMO NOTE: Eldest son in the mock dynasty. This note shows a verse range citation.","quotes":[{"ref":"Genesis 2:24","text":"Therefore shall a man leave his father and his mother, and shall cleave unto his wife: and they shall be one flesh."}],"refs":["Genesis 2:24","Genesis 2:18-25"]}],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"maelis-dunhart","name":"Maelis Dunhart","firstMention":"Genesis 4:20","gender":"female","generation":2,"age":82,"mom":"unknown","dad":"unknown","spouses":["bram-vell"],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"tessaly-vell","name":"Tessaly Vell","firstMention":"Genesis 4:21","gender":"female","generation":2,"age":70,"mom":"isoline-ashby","dad":"garrow-vell","spouses":[],"notes":[{"text":"DEMO NOTE: In the invented story Tessaly raised her daughter alone after leaving for the coast. The father is deliberately left unrecorded to demo an empty Dad field.","refs":["Genesis 1:3"]}],"childrenState":"known","spousesState":"none","siblingsState":"known"},{"id":"corwin-vell","name":"Corwin Vell","firstMention":"Genesis 4:22","gender":"male","generation":2,"age":66,"mom":"isoline-ashby","dad":"garrow-vell","spouses":["liesl-thorne"],"notes":[{"text":"DEMO NOTE: Married to Liesl Thorne but childless in the demo data, to show an empty Children field and a couple block with no child lines. The made-up tale says he spent his life mapping the night sky.","quotes":[{"ref":"Genesis 1:16","text":"And God made two great lights; the greater light to rule the day, and the lesser light to rule the night: he made the stars also."}],"refs":["Genesis 1:16"]}],"childrenState":"none","spousesState":"known","siblingsState":"known"},{"id":"liesl-thorne","name":"Liesl Thorne","firstMention":"Genesis 4:23","gender":"female","generation":2,"age":64,"mom":"unknown","dad":"unknown","spouses":["corwin-vell"],"notes":[{"text":"DEMO NOTE: Married into the mock family and childless, so her block with Corwin shows a marriage with no child lines.","quotes":[{"ref":"Genesis 2:18","text":"And the LORD God said, It is not good that the man should be alone; I will make him an help meet for him."}],"refs":["Genesis 2:18"]}],"childrenState":"unknown","spousesState":"known","siblingsState":"known"},{"id":"ebbet-vell","name":"Ebbet Vell","firstMention":"Genesis 5:3","gender":"male","generation":3,"age":71,"mom":"maelis-dunhart","dad":"bram-vell","spouses":["ysolde-marrick"],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"ysolde-marrick","name":"Ysolde Marrick","firstMention":"Genesis 5:6","gender":"female","generation":3,"age":69,"mom":"unknown","dad":"unknown","spouses":["ebbet-vell"],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"nyra-vell","name":"Nyra Vell","firstMention":"Genesis 5:9","gender":"female","generation":3,"age":64,"mom":"maelis-dunhart","dad":"bram-vell","spouses":[],"notes":[],"childrenState":"known","spousesState":"unknown","siblingsState":"known"},{"id":"pell-vell","name":"Pell Vell","firstMention":"Genesis 5:12","gender":"male","generation":3,"age":"unknown","mom":"maelis-dunhart","dad":"bram-vell","spouses":[],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"quillon-vell","name":"Quillon Vell","firstMention":"Genesis 5:15","gender":"male","generation":3,"age":39,"mom":"maelis-dunhart","dad":"bram-vell","spouses":[],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"rowen-vell","name":"Rowen Vell","firstMention":"Genesis 5:18","gender":"female","generation":3,"age":58,"mom":"tessaly-vell","dad":"unknown","spouses":[],"notes":[{"text":"DEMO NOTE: Only child of a single mother in the mock data. Her son is also listed with no recorded father, so the pattern repeats two generations running.","refs":["Genesis 1:31"]}],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"taddeo-vell","name":"Taddeo Vell","firstMention":"Genesis 6:9","gender":"male","generation":4,"age":80,"mom":"ysolde-marrick","dad":"ebbet-vell","spouses":["cassia-holloway","odile-fairbairn"],"notes":[{"text":"DEMO NOTE: The invented story says Taddeo married Cassia Holloway young; Brisk and Sorrel are their children.","quotes":[{"ref":"Genesis 2:24","text":"Therefore shall a man leave his father and his mother, and shall cleave unto his wife: and they shall be one flesh."}],"refs":["Genesis 2:24"]},{"text":"DEMO NOTE: After Cassia, the mock tale has him marry Odile Fairbairn, mother of Tamsin. Compare the remarriage wording in Genesis 25:1.","quotes":[{"ref":"Genesis 25:1","text":"Then again Abraham took a wife, and her name was Keturah."}],"refs":["Genesis 25:1"]},{"text":"DEMO NOTE: A third note with no quote and two sources, to show each note keeps its own reference list.","refs":["Genesis 33:5","Genesis 48:9"]}],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"cassia-holloway","name":"Cassia Holloway","firstMention":"Genesis 6:10","gender":"female","generation":4,"age":75,"mom":"unknown","dad":"unknown","spouses":["taddeo-vell"],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"odile-fairbairn","name":"Odile Fairbairn","firstMention":"Genesis 7:1","gender":"female","generation":4,"age":68,"mom":"unknown","dad":"unknown","spouses":["taddeo-vell"],"notes":[{"text":"DEMO NOTE: Taddeo's second wife in the invented story. She exists to prove a remarried person renders in two family blocks.","refs":["Genesis 25:1"]}],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"wrenna-vell","name":"Wrenna Vell","firstMention":"Genesis 7:7","gender":"female","generation":4,"age":77,"mom":"ysolde-marrick","dad":"ebbet-vell","spouses":["fenwick-arlo"],"notes":[{"text":"DEMO NOTE: The invented story has Wrenna marry into the Arlo family, which is why her children carry a different surname. Cited verse is decorative, see Genesis 9:13.","quotes":[{"ref":"Genesis 9:13","text":"I do set my bow in the cloud, and it shall be for a token of a covenant between me and the earth."}],"refs":["Genesis 9:13"]},{"text":"DEMO NOTE: A second note for Wrenna. The fictional family remembers her as the one who kept the old orchard going for her children Lisska, Dovrin and Hale.","quotes":[{"ref":"Genesis 8:22","text":"While the earth remaineth, seedtime and harvest, and cold and heat, and summer and winter, and day and night shall not cease."}],"refs":["Genesis 8:22"]}],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"fenwick-arlo","name":"Fenwick Arlo","firstMention":"Genesis 7:13","gender":"male","generation":4,"age":72,"mom":"unknown","dad":"unknown","spouses":["wrenna-vell"],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"ozric-vell","name":"Ozric Vell","firstMention":"Genesis 8:1","gender":"unknown","generation":4,"age":55,"mom":"rowen-vell","dad":"unknown","spouses":[],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"merrit-vell","name":"Merrit Vell","firstMention":"Genesis 8:15","gender":"female","generation":4,"age":61,"mom":"unknown","dad":"pell-vell","spouses":[],"notes":[{"text":"DEMO NOTE: Raised by her father alone in the made-up saga, so her Mom field is empty. This is the mirror image of the single-mother case.","quotes":[{"ref":"Genesis 11:1","text":"And the whole earth was of one language, and of one speech."}],"refs":["Genesis 11:1"]}],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"brisk-vell","name":"Brisk Vell","firstMention":"Genesis 9:1","gender":"male","generation":5,"age":49,"mom":"cassia-holloway","dad":"taddeo-vell","spouses":[],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"sorrel-vell","name":"Sorrel Vell","firstMention":"Genesis 9:18","gender":"female","generation":5,"age":52,"mom":"cassia-holloway","dad":"taddeo-vell","spouses":[],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"tamsin-vell","name":"Tamsin Vell","firstMention":"Genesis 9:19","gender":"female","generation":5,"age":38,"mom":"odile-fairbairn","dad":"taddeo-vell","spouses":[],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"lisska-arlo","name":"Lisska Arlo","firstMention":"Genesis 9:20","gender":"female","generation":5,"age":68,"mom":"wrenna-vell","dad":"fenwick-arlo","spouses":[],"notes":[{"text":"DEMO NOTE: Eldest of three full siblings in the demo data. The fictional story says she dreamed of a staircase to the stars the night her daughter was born.","quotes":[{"ref":"Genesis 28:12","text":"And he dreamed, and behold a ladder set up on the earth, and the top of it reached to heaven: and behold the angels of God ascending and descending on it."}],"refs":["Genesis 28:12"]}],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"dovrin-arlo","name":"Dovrin Arlo","firstMention":"Genesis 9:28","gender":"male","generation":5,"age":63,"mom":"wrenna-vell","dad":"fenwick-arlo","spouses":[],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"hale-arlo","name":"Hale Arlo","firstMention":"Genesis 10:1","gender":"male","generation":5,"age":"unknown","mom":"wrenna-vell","dad":"fenwick-arlo","spouses":[],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"juniver-vell","name":"Juniver Vell","firstMention":"Genesis 10:2","gender":"female","generation":5,"age":40,"mom":"merrit-vell","dad":"unknown","spouses":[],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"kestrel-arlo","name":"Kestrel Arlo","firstMention":"Genesis 10:6","gender":"male","generation":6,"age":41,"mom":"lisska-arlo","dad":"unknown","spouses":[],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"thistle-arlo","name":"Thistle Arlo","firstMention":"Genesis 10:21","gender":"female","generation":6,"age":44,"mom":"lisska-arlo","dad":"unknown","spouses":[],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"pim-vell","name":"Pim Vell","firstMention":"Genesis 10:22","gender":"male","generation":6,"age":30,"mom":"unknown","dad":"brisk-vell","spouses":[],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"lark-vell","name":"Lark Vell","firstMention":"Genesis 10:25","gender":"female","generation":6,"age":28,"mom":"unknown","dad":"brisk-vell","spouses":[],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"wick-arlo","name":"Wick Arlo","firstMention":"Genesis 11:10","gender":"male","generation":7,"age":9,"mom":"thistle-arlo","dad":"unknown","spouses":[],"notes":[],"childrenState":"known","spousesState":"known","siblingsState":"none"},{"id":"briar-vell","name":"Briar Vell","firstMention":"Genesis 11:26","gender":"female","generation":7,"age":6,"mom":"unknown","dad":"pim-vell","spouses":[],"notes":[{"text":"DEMO NOTE: Youngest person in the mock tree (generation 7). Present only to prove the layout handles a deep family line.","quotes":[{"ref":"Genesis 1:1","text":"In the beginning God created the heaven and the earth."}],"refs":["Genesis 1:1"]},{"text":"DEMO NOTE: Second note for Briar, quoting a different verse than the first so each note's quote can be checked separately.","quotes":[{"ref":"Genesis 1:3","text":"And God said, Let there be light: and there was light."}],"refs":["Genesis 1:3"]}],"childrenState":"known","spousesState":"known","siblingsState":"known"},{"id":"unknown-cousin","name":"Unknown Cousin","firstMention":"Genesis 11:31","gender":"unknown","generation":"unknown","age":"unknown","mom":"unknown","dad":"unknown","spouses":[],"notes":[],"childrenState":"unknown","spousesState":"unknown","siblingsState":"unknown"},{"id":"adam","name":"Adam","gender":"male","generation":1,"age":930,"mom":"none","dad":"none","spouses":["eve"],"notes":[],"firstMention":"Genesis 2:19"},{"id":"eve","name":"Eve","gender":"female","generation":1,"age":"unknown","mom":"none","dad":"none","spouses":["adam"],"notes":[],"firstMention":"Genesis 3:20"},{"id":"cain","name":"Cain","gender":"male","generation":2,"age":"unknown","mom":"eve","dad":"adam","spouses":[],"spousesState":"unknown","childrenState":"unknown","notes":[],"firstMention":"Genesis 4:1"},{"id":"abel","name":"Abel","gender":"male","generation":2,"age":"unknown","mom":"eve","dad":"adam","spouses":[],"spousesState":"unknown","childrenState":"unknown","notes":[],"firstMention":"Genesis 4:2"},{"id":"seth","name":"Seth","gender":"male","generation":2,"age":912,"mom":"eve","dad":"adam","spouses":[],"spousesState":"unknown","childrenState":"unknown","notes":[],"firstMention":"Genesis 4:25"}];
+
 // ------------------------------------------------------------------ filter builder rows
 
 const rowIds = (rows) => {
-  const idx = Family.buildIndex(people);
-  return Family.filterByRows(people, idx, rows).map((p) => p.id);
+  const idx = Family.buildIndex(DEMO);
+  return Family.filterByRows(DEMO, idx, rows).map((p) => p.id);
 };
 const R = (field, operator, value, value2) => ({ field, operator: operator || null, value: value === undefined ? '' : value, value2: value2 === undefined ? '' : value2 });
-const allIds = () => people.map((p) => p.id);
+const allIds = () => DEMO.map((p) => p.id);
 
 test('generation accepts "unknown", rejects other junk; unknown-cousin is generation "unknown"', () => {
   const base = (id, generation) => ({ id, name: id, gender: 'male', generation, age: null, mom: null, dad: null, spouses: [], notes: [] });
@@ -742,15 +701,13 @@ test('generation accepts "unknown", rejects other junk; unknown-cousin is genera
     const problems = Family.validate([base('a', bad)]).join('\n');
     assert(problems.includes('generation must be a positive integer or "unknown"'), `generation ${JSON.stringify(bad)} should be rejected`);
   }
-  assert.strictEqual(people.find((p) => p.id === 'unknown-cousin').generation, 'unknown');
-  assert.strictEqual(people.filter((p) => p.generation === 'unknown').length, 1, 'only unknown-cousin has an unknown generation');
   // Unknown sorts after every numbered generation (tree band + search order).
   assert(Family.generationRank('unknown') > Family.generationRank(999));
 });
 
 test('filter rows: Name is a case-insensitive contains; blank is inert', () => {
   assert.deepStrictEqual(rowIds([R('name', null, 'ARLO')]).sort(),
-    allIds().filter((id) => /arlo/i.test(people.find((p) => p.id === id).name)).sort());
+    allIds().filter((id) => /arlo/i.test(DEMO.find((p) => p.id === id).name)).sort());
   assert.deepStrictEqual(rowIds([R('name', null, '  wick ')]).sort(), ['fenwick-arlo', 'wick-arlo']);
   assert.deepStrictEqual(rowIds([R('name', null, '')]), allIds());
   assert.deepStrictEqual(rowIds([R('name', null, '   ')]), allIds());
@@ -758,7 +715,7 @@ test('filter rows: Name is a case-insensitive contains; blank is inert', () => {
 });
 
 test('filter rows: Generation is / is between (inclusive, blank side unbounded) / is unknown', () => {
-  const gen = (g) => people.filter((p) => p.generation === g).map((p) => p.id);
+  const gen = (g) => DEMO.filter((p) => p.generation === g).map((p) => p.id);
   assert.deepStrictEqual(rowIds([R('generation', 'is', '3')]), gen(3));
   assert.deepStrictEqual(rowIds([R('generation', 'is', '')]), allIds(), 'blank "is" is inert');
   assert.deepStrictEqual(rowIds([R('generation', 'is', 'abc')]), [], 'junk "is" matches nothing');
@@ -773,8 +730,8 @@ test('filter rows: Generation is / is between (inclusive, blank side unbounded) 
 test('filter rows: Gender dropdown (blank = any)', () => {
   for (const g of ['male', 'female', 'unknown']) {
     const got = rowIds([R('gender', null, g)]);
-    assert(got.length && got.every((id) => people.find((p) => p.id === id).gender === g), g);
-    assert.strictEqual(got.length, people.filter((p) => p.gender === g).length, g);
+    assert(got.length && got.every((id) => DEMO.find((p) => p.id === id).gender === g), g);
+    assert.strictEqual(got.length, DEMO.filter((p) => p.gender === g).length, g);
   }
   assert.deepStrictEqual(rowIds([R('gender', null, '')]), allIds());
   assert(rowIds([R('gender', null, 'unknown')]).includes('ozric-vell'));
@@ -785,7 +742,7 @@ test('filter rows: Age is / is between / is unknown; junk "is" matches nothing',
   assert.deepStrictEqual(rowIds([R('age', 'is', ' 64 ')]).sort(), ['liesl-thorne', 'nyra-vell']);
   assert.deepStrictEqual(rowIds([R('age', 'is', '')]), allIds(), 'blank "is" is inert');
   assert.deepStrictEqual(rowIds([R('age', 'is', 'old')]), [], 'junk "is" matches nothing');
-  const inRange = (lo, hi) => people.filter((p) => typeof p.age === 'number' && p.age >= lo && p.age <= hi).map((p) => p.id);
+  const inRange = (lo, hi) => DEMO.filter((p) => typeof p.age === 'number' && p.age >= lo && p.age <= hi).map((p) => p.id);
   assert.deepStrictEqual(rowIds([R('age', 'between', '61', '64')]), inRange(61, 64), 'inclusive');
   assert(rowIds([R('age', 'between', '61', '64')]).includes('merrit-vell') && rowIds([R('age', 'between', '61', '64')]).includes('liesl-thorne'));
   assert.deepStrictEqual(rowIds([R('age', 'between', '90', '')]), ['garrow-vell', 'isoline-ashby', 'adam', 'seth'], 'blank max = unbounded');
@@ -797,8 +754,8 @@ test('filter rows: Age is / is between / is unknown; junk "is" matches nothing',
 });
 
 test('filter rows: Mom / Dad contain-match the parent\'s name; unknown/none never match a query', () => {
-  const idx = Family.buildIndex(people);
-  const kidsOf = (role, re) => people.filter((p) => idx.byId.has(p[role]) && re.test(idx.byId.get(p[role]).name)).map((p) => p.id);
+  const idx = Family.buildIndex(DEMO);
+  const kidsOf = (role, re) => DEMO.filter((p) => idx.byId.has(p[role]) && re.test(idx.byId.get(p[role]).name)).map((p) => p.id);
   assert.deepStrictEqual(rowIds([R('mom', null, 'wrenna')]), ['lisska-arlo', 'dovrin-arlo', 'hale-arlo']);
   assert.deepStrictEqual(rowIds([R('mom', null, 'VELL')]), kidsOf('mom', /vell/i));
   assert.deepStrictEqual(rowIds([R('dad', null, 'brisk')]), ['pim-vell', 'lark-vell']);
@@ -814,8 +771,8 @@ test('filter rows: Mom / Dad contain-match the parent\'s name; unknown/none neve
 });
 
 test('filter rows: Child / Sibling / Spouse amount, amount range, name', () => {
-  const idx = Family.buildIndex(people);
-  const count = (map, pred) => people.filter((p) => pred((idx[map].get(p.id) || []).length)).map((p) => p.id);
+  const idx = Family.buildIndex(DEMO);
+  const count = (map, pred) => DEMO.filter((p) => pred((idx[map].get(p.id) || []).length)).map((p) => p.id);
   // Child
   assert.deepStrictEqual(rowIds([R('child', 'amount', '4')]), ['bram-vell', 'maelis-dunhart']);
   assert.deepStrictEqual(rowIds([R('child', 'amount', '0')]), count('childrenOf', (n) => n === 0));
@@ -838,12 +795,12 @@ test('filter rows: Child / Sibling / Spouse amount, amount range, name', () => {
 });
 
 test('filter rows: Notes has note / no note / note contains (blank inert)', () => {
-  const withNotes = people.filter((p) => Family.noteViews(p).length > 0).map((p) => p.id);
-  assert(withNotes.length > 0 && withNotes.length < people.length);
+  const withNotes = DEMO.filter((p) => Family.noteViews(p).length > 0).map((p) => p.id);
+  assert(withNotes.length > 0 && withNotes.length < DEMO.length);
   assert.deepStrictEqual(rowIds([R('notes', 'hasNote')]), withNotes);
   assert.deepStrictEqual(rowIds([R('notes', 'noNote')]), allIds().filter((id) => !withNotes.includes(id)));
   const word = 'ORCHARD';
-  const expected = people.filter((p) => p.notes.some((n) => n.text.toLowerCase().includes('orchard'))).map((p) => p.id);
+  const expected = DEMO.filter((p) => p.notes.some((n) => n.text.toLowerCase().includes('orchard'))).map((p) => p.id);
   assert(expected.includes('garrow-vell'));
   assert.deepStrictEqual(rowIds([R('notes', 'noteContains', word)]), expected, 'case-insensitive contains over note text');
   assert.deepStrictEqual(rowIds([R('notes', 'noteContains', 'zzqq')]), []);
@@ -866,9 +823,9 @@ test('filter rows AND together; blank rows inert; rowIsActive mirrors inertness'
   }
 });
 
-// ------------------------------------------------------------------ same-named people
+// ------------------------------------------------------------------ same-named DEMO
 
-// Same-named people are distinct individuals: every link is by id, never by name.
+// Same-named DEMO are distinct individuals: every link is by id, never by name.
 const SP = (id, name, gender, extra) => Object.assign(
   { id, name, gender, generation: 1, age: 40, mom: 'unknown', dad: 'unknown', spouses: [], notes: [], firstMention: 'Genesis 4:17' }, extra);
 const sameNameRows = (list, rows) => Family.filterByRows(list, Family.buildIndex(list), rows).map((p) => p.id);
@@ -1030,69 +987,10 @@ test('firstMention: every person in people.json has one, and the verse exists in
   assert.deepStrictEqual(Family.validate(people), []);
 });
 
-test('firstMention: the Vells\' demo refs sit in Genesis 4-11, earlier generations first', () => {
-  const vells = people.slice(0, 34);
-  let prev = [4, 0];
-  for (const p of vells) {
-    const r = Family.parseRef(p.firstMention);
-    assert.strictEqual(r.book, 'Genesis', p.id);
-    assert(r.chapter >= 4 && r.chapter <= 11, `${p.id}: ${p.firstMention} outside Genesis 4-11`);
-    assert(r.chapter > prev[0] || (r.chapter === prev[0] && r.verse > prev[1]), `${p.id}: demo refs run forward in data order`);
-    // Invented names never occur in scripture, so these are placeholders.
-    assert(!new RegExp(`\\b${p.name.split(' ')[0]}\\b`, 'i').test(verseText(p.firstMention)), `${p.id}'s name is not in scripture`);
-    prev = [r.chapter, r.verse];
-  }
-});
-
-// ------------------------------------------------------------------ Genesis seed
-
-const SEED = { adam: 'Genesis 2:19', eve: 'Genesis 3:20', cain: 'Genesis 4:1', abel: 'Genesis 4:2', seth: 'Genesis 4:25' };
-
-test('Genesis seed: 39 people; the five real people with their exact firstMention refs', () => {
-  assert.strictEqual(people.length, 39);
-  const byId = new Map(people.map((p) => [p.id, p]));
-  for (const [id, ref] of Object.entries(SEED)) {
-    assert(byId.has(id), `${id} exists`);
-    assert.strictEqual(byId.get(id).firstMention, ref, `${id}.firstMention`);
-  }
-  assert.strictEqual(byId.get('adam').age, 930);
-  assert.strictEqual(byId.get('eve').age, 'unknown');
-  for (const id of ['cain', 'abel', 'seth']) {
-    const p = byId.get(id);
-    assert.strictEqual(p.mom, 'eve', `${id}.mom`);
-    assert.strictEqual(p.dad, 'adam', `${id}.dad`);
-    assert.strictEqual(p.spousesState, 'unknown', `${id}.spousesState`);
-    assert.strictEqual(p.childrenState, 'unknown', `${id}.childrenState`);
-  }
-  const idx = Family.buildIndex(people);
-  assert.deepStrictEqual(Family.deriveUnions(idx).byKey.get('eve|adam').children, ['cain', 'abel', 'seth']);
-  assert.deepStrictEqual(idx.spousesOf.get('adam'), ['eve']);
-  assert.deepStrictEqual(Family.validate(people), []);
-});
-
-test('Genesis seed: each firstMention verse states the name, and no earlier verse does', () => {
-  const gen = kjv('genesis');
-  const byId = new Map(people.map((p) => [p.id, p]));
-  for (const [id, ref] of Object.entries(SEED)) {
-    const name = byId.get(id).name;
-    const re = new RegExp(`\\b${name}\\b`);
-    const r = Family.parseRef(ref);
-    assert(re.test(verseText(ref)), `${ref} names ${name}: "${verseText(ref)}"`);
-    let first = null;
-    gen.chapters.some((ch, c) => ch.some((v, i) => (re.test(v) ? (first = `Genesis ${c + 1}:${i + 1}`) : false)));
-    assert.strictEqual(first, Family.formatRef(r), `${name} is first named at ${first}`);
-  }
-});
-
-test('Genesis seed: the reader links the real names in Genesis 4:1-2 and 4:25', () => {
-  const idx = Family.buildIndex(people);
-  const linked = (ref) => Family.findNameOccurrences(verseText(ref), idx, ref, {}).map((o) => `${o.text}=${o.person.id}`);
-  assert.deepStrictEqual(linked('Genesis 4:1'), ['Adam=adam', 'Eve=eve', 'Cain=cain']);
-  assert.deepStrictEqual(linked('Genesis 4:2'), ['Abel=abel', 'Abel=abel', 'Cain=cain']);
-  assert.deepStrictEqual(linked('Genesis 4:25'), ['Adam=adam', 'Seth=seth', 'Abel=abel', 'Cain=cain']);
-  assert.deepStrictEqual(linked('Genesis 1:1'), []);
-  assert.deepStrictEqual(linked('Genesis 4:22'), [], 'Tubal-cain is not Adam\'s son Cain');
-});
+// The demo-family/Genesis-seed data tests were removed when the walk restarted at
+// Genesis 1 (no people named yet). Standing guards that survive: the every-person
+// firstMention check above, and the synthetic same-name / resolution suites below.
+// When real people are entered (Genesis 2 onward), re-add verse-fact tests for them.
 
 // ------------------------------------------------------------------ name resolution
 
@@ -1200,13 +1098,13 @@ test('server boots, serves the page, and /api/people returns the array', () => w
 
   const page = await get(port, '/');
   assert.strictEqual(page.status, 200);
-  assert.match(page.body, /MOCK DATA/);
-  assert.match(page.body, /Vell family is invented/, 'banner says the Vells are the invented demo');
-  assert.match(page.body, /Adam’s family \(Genesis 2–5\) is the first real data/, 'banner names the first real data');
+  assert.match(page.body, /GENESIS 1 READ/);
+  assert.match(page.body, /no people are named in Genesis 1/, 'banner says why the tree is empty');
+  assert.match(page.body, /first named person arrives in Genesis 2/, 'banner points at what comes next');
   for (const id of ['bible-btn', 'reader-panel', 'reader-backdrop', 'reader-book', 'reader-prev', 'reader-next', 'reader-where', 'reader-close', 'reader-body']) {
     assert(page.body.includes(`id="${id}"`), `page should contain #${id}`);
   }
-  assert(page.body.includes('family.js?v=7') && page.body.includes('app.js?v=7'), 'both scripts cache-busted at v=7');
+  assert(page.body.includes('family.js?v=10') && page.body.includes('app.js?v=10'), 'both scripts cache-busted at v=10');
   const kjvIndex = await get(port, '/kjv/index.json');
   assert.strictEqual(kjvIndex.status, 200, 'KJV files are served statically');
   assert.match(kjvIndex.type, /application\/json/);

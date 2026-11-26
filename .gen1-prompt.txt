@@ -1,0 +1,69 @@
+# FEATURE PASS: Genesis 1 data entry — zero people (v1.8.0)
+
+Repo: /home/imebored/bible-family-tree. The owner is entering the Bible verse by verse,
+starting at Genesis 1. The full chapter has been read (all 31 verses): Genesis 1 names
+NO people — it names only things (Day, Night, Heaven, Earth, Seas in 1:5/1:8/1:10), and
+creates "man... male and female" (1:26-27) WITHOUT naming either. Per the first-mention
+rule (a person enters the data at the first verse their NAME is stated), Genesis 1
+yields ZERO people. data/people.json has ALREADY been emptied to [] by the orchestrator.
+
+Your job: make the empty state honest, safe, and tested. Do NOT git commit/push.
+Do NOT re-add any person (no Vells, no Adam seed — nothing). No server.js changes
+beyond nothing; no new features.
+
+## Test command (custom zero-dep harness — NOT node --test)
+
+    node tests/data.test.js
+
+With people.json now [], most data-dependent tests FAIL — that is the expected baseline.
+End state: ALL green, with a suite that no longer depends on people.json being populated.
+
+## TASK A — tests (tests/data.test.js)
+
+1. 'people.json parses as a JSON array': drop the "must not be empty" assertion — an
+   empty array is valid during the walk (add a comment saying so).
+2. REMOVE every test that asserts facts about data/people.json's contents: the count
+   test (39), all Vell search/filter/firstMention expectations, unknown-cousin,
+   gender counts, the demo-story test. Their value moves into the synthetic fixtures
+   that already exist (same-name battery, resolution pipeline, validate unit tests) —
+   verify those still pass untouched.
+3. KEEP: KJV data tests (index.json 66 books, genesis.json 50 chapters, spot verses),
+   server smoke tests, /api/mentions tests, firstMention VALIDATOR tests (they use
+   synthetic fixtures — check they don't read people.json).
+4. ADD: 'empty data is valid': validate([]) reports no problems; buildIndex([]) yields
+   empty maps without throwing; the server serves [] for /api/people.
+5. Suite ends fully green.
+
+## TASK B — banner (public/index.html .mock-banner) + README
+
+The banner currently talks about the Vell demo family and Adam's family — both are gone.
+New copy (terse, same style, no emoji), e.g.:
+  GENESIS 1 READ — No people are named in Genesis 1. The first named person arrives
+  in Genesis 2; the tree fills in as the walk continues.
+README: the phase warning block and the data section must match reality — the Vell demo
+family and the Genesis seed are REMOVED from the repo's history-forward state; the data
+file is empty pending Genesis 2; keep the data-format docs (person shape, firstMention
+contract, mentions.json contract, unknown/none) intact for future entries — they are the
+spec for entering people. Remove only text that describes the demo data as current.
+If the README references demo counts (34/39), fix those too.
+
+## TASK C — empty-boot safety (only if something actually breaks)
+
+Boot the app with zero people: the tree area should render empty without console errors,
+the results pane should not divide by zero or crash, opening the Bible reader and
+navigating chapters must still work (nothing highlights — correct, nobody is documented).
+The First-mention/detail panel can't be reached with no people — that's fine.
+Fix ONLY actual crashes you observe by reading the code paths (state.people empty);
+keep fixes minimal. Bump both script tags in index.html to ?v=8.
+
+## Style constraints
+
+- family.js = ES5; app.js = match its local style. No frameworks, no dependencies.
+- Do not rename exported functions or existing element ids.
+- Do not touch public/kjv/* or data/people.json (already correct).
+
+## Definition of done
+
+All tests green, banner + README honest, empty boot verified (report what you observed
+in the empty app: results header text, any console errors, reader still working),
+self-report: files changed, tests removed/added (counts), and anything that broke.
