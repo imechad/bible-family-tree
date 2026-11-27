@@ -15,32 +15,55 @@
     "notes": [
       {
         "text": "The first man, formed from the dust with God's breath in him (Genesis 2:7) — made, not born, so no parents and no siblings (God calls him alone, Genesis 2:18).",
-        "refs": ["Genesis 2:7", "Genesis 2:18"],
+        "refs": [
+          "Genesis 2:7",
+          "Genesis 2:18"
+        ],
         "quotes": [
-          { "ref": "Genesis 2:7", "text": "And the LORD God formed man of the dust of the ground, and breathed into his nostrils the breath of life; and man became a living soul." }
+          {
+            "ref": "Genesis 2:7",
+            "text": "And the LORD God formed man of the dust of the ground, and breathed into his nostrils the breath of life; and man became a living soul."
+          }
         ]
       },
       {
         "text": "Put in the garden of Eden to dress and keep it (Genesis 2:15); free to eat of every tree but the tree of knowledge — in the day he eats of it he shall surely die (Genesis 2:16-17).",
-        "refs": ["Genesis 2:15", "Genesis 2:16-17"]
+        "refs": [
+          "Genesis 2:15",
+          "Genesis 2:16-17"
+        ]
       },
       {
         "text": "First called Adam here — every earlier verse says only \"the man\" (Genesis 2:19). He named the animals, but no help meet was found among them (Genesis 2:20).",
-        "refs": ["Genesis 2:19", "Genesis 2:20"],
+        "refs": [
+          "Genesis 2:19",
+          "Genesis 2:20"
+        ],
         "quotes": [
-          { "ref": "Genesis 2:19", "text": "And out of the ground the LORD God formed every beast of the field, and every fowl of the air; and brought them unto Adam to see what he would call them: and whatsoever Adam called every living creature, that was the name thereof." }
+          {
+            "ref": "Genesis 2:19",
+            "text": "And out of the ground the LORD God formed every beast of the field, and every fowl of the air; and brought them unto Adam to see what he would call them: and whatsoever Adam called every living creature, that was the name thereof."
+          }
         ]
       },
       {
         "text": "God built a woman from his rib (Genesis 2:21-22), and Adam named her Woman (Genesis 2:23). Her proper name Eve is not stated until Genesis 3:20 — she joins the tree when Genesis 3 is walked.",
-        "refs": ["Genesis 2:21-22", "Genesis 2:23"],
+        "refs": [
+          "Genesis 2:21-22",
+          "Genesis 2:23"
+        ],
         "quotes": [
-          { "ref": "Genesis 2:23", "text": "And Adam said, This is now bone of my bones, and flesh of my flesh: she shall be called Woman, because she was taken out of Man." }
+          {
+            "ref": "Genesis 2:23",
+            "text": "And Adam said, This is now bone of my bones, and flesh of my flesh: she shall be called Woman, because she was taken out of Man."
+          }
         ]
       },
       {
         "text": "Married: they become one flesh (Genesis 2:24). His spouse stays unknown on the record until Eve enters at Genesis 3:20.",
-        "refs": ["Genesis 2:24"]
+        "refs": [
+          "Genesis 2:24"
+        ]
       }
     ]
   }

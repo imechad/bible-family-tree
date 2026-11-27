@@ -131,6 +131,18 @@ array and that a malformed file produces an error instead of a crash.
   Every reference links to that exact passage on BibleGateway (KJV), for example
   `Genesis 4:25` →
   `https://www.biblegateway.com/passage/?search=Genesis%204%3A25&version=KJV`.
+- **Edit mode:** the **Edit** button in the detail panel turns that person's fields
+  into a form — name, gender, generation, age, mom, dad, spouses (by name), the
+  spouse/children/siblings list states, and every note (its text and its sources, with
+  add/remove). Changes save **automatically** about a second after you stop typing: the
+  page POSTs the whole people array to the server, which validates it and rewrites
+  `data/people.json` atomically — so an edit survives refresh on any device and is an
+  ordinary data-file change for the normal commit/merge flow. A small "Saved ✓" chip
+  confirms each save; if the server rejects anything (bad reference, spouse rules, a
+  field out of range) a red box lists exactly what is wrong and nothing is saved until
+  it's fixed. Spouse marriages are kept in sync on both people automatically, and note
+  quotes whose source reference you remove are dropped with it. First mention is
+  read-only — it belongs to the verse walk, not hand editing.
 - **First mention:** the detail panel's **First mention** row shows the verse where the
   person is first named, linked twice: `Genesis 2:19 ↗` opens it on BibleGateway, and
   **Read here** opens the built-in reader at that verse.

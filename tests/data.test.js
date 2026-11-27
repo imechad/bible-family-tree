@@ -1106,7 +1106,8 @@ test('server boots, serves the page, and /api/people returns the array', () => w
   for (const id of ['bible-btn', 'reader-panel', 'reader-backdrop', 'reader-book', 'reader-prev', 'reader-next', 'reader-where', 'reader-close', 'reader-body']) {
     assert(page.body.includes(`id="${id}"`), `page should contain #${id}`);
   }
-  assert(page.body.includes('family.js?v=10') && page.body.includes('app.js?v=10'), 'both scripts cache-busted at v=10');
+  assert(page.body.includes('family.js?v=11') && page.body.includes('app.js?v=11'), 'both scripts cache-busted at v=11');
+  assert(page.body.includes('styles.css?v=11'), 'stylesheet cache-busted at v=11');
   const kjvIndex = await get(port, '/kjv/index.json');
   assert.strictEqual(kjvIndex.status, 200, 'KJV files are served statically');
   assert.match(kjvIndex.type, /application\/json/);
@@ -1166,6 +1167,107 @@ test('GET /api/mentions: absent file yields {}, malformed yields 500, fixes need
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+// ------------------------------------------------------------------ server writes (POST /api/people)
+
+function post(port, urlPath, bodyText) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      host: '127.0.0.1', port, path: urlPath, method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyText) }
+    }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => resolve({ status: res.statusCode, type: res.headers['content-type'], cache: res.headers['cache-control'], body }));
+    });
+    req.on('error', reject);
+    req.end(bodyText);
+  });
+}
+
+// Every write test works on a TEMP COPY; the real data/people.json is never touched.
+async function withTempDataServer(fn) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bft-write-'));
+  const file = path.join(tmp, 'people.json');
+  fs.copyFileSync(DATA_FILE, file);
+  const realBefore = fs.readFileSync(DATA_FILE, 'utf8');
+  try {
+    await withServer({ DATA_FILE: file }, (port, child) => fn(port, child, file));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    assert.strictEqual(fs.readFileSync(DATA_FILE, 'utf8'), realBefore, 'real data/people.json must be untouched');
+  }
+}
+
+test('POST /api/people: a valid edit is saved, served back, and written pretty-printed', async () => {
+  await withTempDataServer(async (port, child, file) => {
+    const people = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const adam = people.find((p) => p.id === 'adam');
+    assert.ok(adam, 'temp copy should hold Adam');
+    adam.age = 930;
+    const res = await post(port, '/api/people', JSON.stringify(people));
+    assert.strictEqual(res.status, 200, res.body);
+    assert.match(res.type, /application\/json/);
+    assert.strictEqual(res.cache, 'no-store');
+    assert.deepStrictEqual(JSON.parse(res.body), { ok: true, count: people.length });
+
+    const after = await get(port, '/api/people');
+    assert.strictEqual(after.status, 200);
+    assert.strictEqual(JSON.parse(after.body).find((p) => p.id === 'adam').age, 930);
+
+    const onDisk = fs.readFileSync(file, 'utf8');
+    assert.strictEqual(onDisk, JSON.stringify(people, null, 2) + '\n', 'file is 2-space pretty JSON + newline');
+    assert.ok(!fs.existsSync(file + '.tmp'), 'temp write file is renamed away');
+    assert.strictEqual(child.exitCode, null, 'server must still be running');
+  });
+});
+
+test('POST /api/people: non-arrays, bad JSON and invalid data are rejected with 400 and nothing is written', async () => {
+  await withTempDataServer(async (port, child, file) => {
+    const before = fs.readFileSync(file, 'utf8');
+
+    const notArray = await post(port, '/api/people', '{"id":"adam"}');
+    assert.strictEqual(notArray.status, 400);
+    assert.ok(Array.isArray(JSON.parse(notArray.body).problems));
+
+    const badJson = await post(port, '/api/people', '[ {"id": "adam",} ');
+    assert.strictEqual(badJson.status, 400);
+    assert.match(JSON.parse(badJson.body).error, /not valid JSON/);
+
+    const notObjects = await post(port, '/api/people', '[1, 2]');
+    assert.strictEqual(notObjects.status, 400);
+    assert.ok(Array.isArray(JSON.parse(notObjects.body).problems));
+
+    // A same-gender spouse pair fails family.js validation.
+    const people = JSON.parse(before);
+    const adam = people.find((p) => p.id === 'adam');
+    const twin = { ...JSON.parse(JSON.stringify(adam)), id: 'adam-twin', name: 'Adam Twin', spouses: ['adam'] };
+    delete twin.spousesState;
+    adam.spouses = ['adam-twin'];
+    delete adam.spousesState;
+    people.push(twin);
+    const invalid = await post(port, '/api/people', JSON.stringify(people));
+    assert.strictEqual(invalid.status, 400);
+    const problems = JSON.parse(invalid.body).problems;
+    assert.ok(Array.isArray(problems) && problems.length > 0);
+    assert.ok(problems.some((p) => /both male/.test(p)), problems.join('\n'));
+
+    const minimal = await post(port, '/api/people', '[{"id":"x"}]');
+    assert.strictEqual(minimal.status, 400);
+    assert.ok(JSON.parse(minimal.body).problems.length > 0);
+
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), before, 'rejected posts must not change the file');
+    assert.strictEqual(child.exitCode, null, 'server must still be running');
+  });
+});
+
+test('POST is only accepted on /api/people; other paths stay 405', async () => {
+  await withTempDataServer(async (port) => {
+    const res = await post(port, '/api/mentions', '{}');
+    assert.strictEqual(res.status, 405);
+  });
 });
 
 // ------------------------------------------------------------------ runner

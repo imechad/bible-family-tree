@@ -1,0 +1,65 @@
+Bible Family Tree Explorer — add an EDIT MODE with auto-save.
+
+IMPORTANT: MINIMAL changes only. Do not rewrite large sections. Add new code at the anchors below; do not restructure existing functions.
+
+## Goal
+The owner edits a person's info directly in the detail panel. Edits auto-save (debounced) to the server, which validates and writes the real data file (data/people.json). No save button — it saves itself and shows a small "Saved ✓" confirmation. Must work great on iPhone Safari (touch targets, no keyboard tricks, inputs with font-size ≥16px so iOS doesn't zoom).
+
+## What already exists (DO NOT duplicate or rewrite)
+- public/app.js (1473 lines): `el(tag, attrs, children)` DOM helper at line 81; `els` registry at line 26; `renderDetail(id)` at lines 746-797 renders the read-only detail panel into `els.detailBody.replaceChildren(...)`; data loads via `fetch('/api/people', { cache: 'no-store' })` at line 189, index built with `F.buildIndex(raw)` at line 208, `state.people`/`state.index` set right after. Family library is exposed as `F` (F.validate, F.buildIndex, F.isPositiveInt...). Tree re-render happens after data load — find that path and reuse it; do not invent a second pipeline.
+- public/family.js: DO NOT TOUCH. `F.validate(people, index)` returns an array of problem strings ([] = clean).
+- server.js (142 lines): zero-dependency http server. `handleApiPeople(res)` at line 44; route table at lines 113-129 currently rejects every non-GET/HEAD with 405 (line 115-118). `DATA_FILE` env var already exists (line 22) — the tests will boot the server with DATA_FILE pointed at a temp copy.
+- tests/data.test.js: plain-node suite, currently 54/54. It already boots the server on a free port (PORT=0).
+- index.html: line 8 stylesheet `<link rel="stylesheet" href="styles.css">` (no version param yet); lines 118-119 `<script src="family.js?v=10">` / `<script src="app.js?v=10">`.
+- data/people.json currently holds exactly one person (Adam) — DO NOT modify it.
+
+## What to build
+
+### 1. server.js — POST /api/people (core)
+- In the route table: allow POST for `/api/people` only (everything else stays GET/HEAD with the existing 405). Call a new `handleApiPeoplePost(req, res)`.
+- It must: read the body (cap at 2,000,000 bytes → 413 beyond), JSON.parse it (→ 400 on parse error), require `Array.isArray(body)` (→ 400), require every element to be an object, then validate with `require('./public/family.js').validate(body)` — if problems.length, respond 400 with `{ problems }`; if clean, write the file ATOMICALLY: write `DATA_FILE + '.tmp'` then `fs.renameSync` onto DATA_FILE, pretty-printed 2-space JSON + trailing newline. Respond `{ ok: true, count: N }` with the same no-store headers as GET.
+- A failed write or any thrown error → 500 JSON, server stays up.
+
+### 2. public/app.js — Edit mode in the detail panel
+- Add an "Edit" button to the detail panel header area (next to the ✕ close button; find where the ✕ is wired in the `els` registry). Tapping Edit re-renders the panel in edit mode; a "Done" button returns to read-only view.
+- Edit mode renders the SAME fields as inputs (use the `el()` helper, consistent with existing markup/classes):
+  - Name: text input.
+  - Gender: select male / female / unknown.
+  - Generation: number input + an "unknown" checkbox (checked = "unknown").
+  - Age: number input + an "unknown" checkbox (checked = "unknown").
+  - Mom / Dad: each a select with options: `none`, `unknown`, then every existing female (for mom) / male (for dad) person by display name, excluding the person being edited. Values resolve to person ids.
+  - Spouses: text input of comma-separated spouse NAMES; on save each name resolves to exactly one existing person (case-insensitive, exact match first, then unique contains; self and wrong-gender names are errors shown to the user).
+  - Three compact selects for `spousesState`, `childrenState`, `siblingsState`: options known / none / unknown, current value preselected (absent = known). If the spouses list ends up non-empty, spousesState is forced to known (absent).
+  - Notes: each note gets a textarea (its `text`), a text input (its `refs` as comma-separated references like "Genesis 2:7, Genesis 2:19"), and a small Remove button; an "Add note" button appends an empty note `{ text: "", refs: [] }`.
+  - First mention stays read-only (shown as plain text in edit mode) — it is set by the Bible walk, not by hand.
+- AUTO-SAVE: any input/change event schedules a save 800ms after the last change (debounce). The save: build the updated person from the form, apply spouse mutuality in BOTH directions across the whole array (add/remove on both sides), drop any note quote whose `ref` is no longer present in that note's refs, swap the updated person into a copy of `state.people`, then POST the full array to `/api/people`. On 200: flash a small "Saved ✓" chip inside the panel (fades after ~1.5s), then re-fetch `/api/people` and re-render through the EXISTING load/render path, keeping the edited person selected and staying in edit mode. On 400: render the returned `problems` list in a red error box at the top of the edit form (nothing is saved silently — the user sees exactly what is wrong and can fix it). On network failure: same box with a plain message. Also flush any pending debounced save when Edit/Done/close is used.
+- Leave `renderDetail` (read mode) intact — edit mode is a separate render function alongside it, sharing the panel container.
+
+### 3. public/styles.css — form styling
+- Dark-theme styles for the edit form (inputs/selects/textareas matching the existing palette), tap targets ≥40px tall, font-size ≥16px on inputs, the "Saved ✓" chip and the red error box. Append at the end; do not modify existing rules.
+
+### 4. index.html — cache-bust
+- Lines 118-119: bump both `?v=10` to `?v=11`. Line 8: change href to `styles.css?v=11`.
+
+### 5. tests/data.test.js — server write tests
+- New test(s): boot the server with `DATA_FILE` pointed at a TEMP COPY of the real data file and `PORT=0` (the existing smoke test shows the boot pattern — follow it). Then:
+  1. POST a valid modified array (e.g. change Adam's age to 930) → expect 200 `{ok:true,count:1}`, then GET /api/people reflects the change.
+  2. POST an invalid array (not an array, and one with a validation problem such as a spouse pair of the same gender) → expect 400 with a `problems` array.
+  3. The temp file exists on disk with pretty-printed JSON after a successful POST.
+  - Delete the temp file afterwards; never touch the real data/people.json.
+- Keep all existing tests passing. Report the final pass count.
+
+## Safety rules
+- Backup first: `cp server.js public/app.js public/styles.css public/index.html /tmp/preedit-backup/` (create the dir) before editing anything.
+- After EACH file edit: `node --check server.js` for server.js and tests file; for public/app.js do `cp public/app.js /tmp/a.mjs && node --check /tmp/a.mjs`.
+- app.js must GROW (roughly +200-350 lines), never shrink. Do not delete or rename any existing function.
+- Zero new dependencies. No build step. No git commands.
+- ASCII only in the code you write (the UI text "Saved ✓" is the one allowed exception).
+
+## Verification (run all, report results)
+1. `node tests/data.test.js` — all pass; report the exact final count.
+2. Live probe (you must actually run this): `DATA_FILE=/tmp/probe-people.json PORT=0 node server.js &` (it prints the chosen port), then: curl GET /api/people (expect 200 + Adam), curl POST the same array with Adam's age changed to 930 (expect `{ok:true,count:1}`), curl GET again (expect age 930), curl POST `[{"id":"x"}]` (expect 400 with problems), then kill the probe server and `rm /tmp/probe-people.json*`.
+3. `grep -c "handleApiPeoplePost" server.js` → at least 2 (definition + call).
+4. `wc -l public/app.js` → greater than 1473 (grew, not gutted).
+
+When everything above is done and verified, print a summary of: files changed with line-count deltas, the final test count, and the probe results.

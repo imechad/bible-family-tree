@@ -668,7 +668,10 @@
       });
     });
 
-    renderDetail(id);
+    // Edit mode keeps its form for the same person (e.g. the post-save
+    // reload); picking someone else saves what's pending and reads them.
+    if (edit.on && edit.id === id) syncEdit(id);
+    else { leaveEdit(); renderDetail(id); }
     markCurrentResult();
     if (history.replaceState) history.replaceState(null, '', '#person=' + encodeURIComponent(id));
 
@@ -684,6 +687,7 @@
   }
 
   function closeDetail() {
+    leaveEdit();
     els.detail.hidden = true;
     els.sizer.style.marginBottom = '';
     state.selectedId = null;
@@ -818,6 +822,452 @@
         ? [el('span', { text: 'Sources:' })].concat(n.refs.map(function (r) { return refLink(r.ref); }))
         : [el('span', { class: 'none', text: '⚠ No source reference recorded for this note' })])
     ]);
+  }
+
+  // ---------------------------------------------------------------- edit mode
+
+  /*
+   * Edit mode turns the detail panel into a form for the selected person.
+   * There is no save button: every change schedules a save EDIT_DEBOUNCE_MS
+   * after the last keystroke. A save sends the WHOLE people array to
+   * POST /api/people, which validates it with family.js and writes
+   * data/people.json; on success the data is re-fetched and re-rendered
+   * through init(), the same path the first load uses. The form itself is
+   * kept (not rebuilt) for the same person, so typing and the iOS keyboard
+   * are never interrupted by a save landing.
+   */
+  var EDIT_DEBOUNCE_MS = 800;
+  var edit = {
+    on: false,
+    id: null,
+    form: null,        // see renderEdit: { id, root, title, errorBox, chip, inputs..., noteRows }
+    timer: null,
+    chipTimer: null,
+    chain: Promise.resolve() // saves run one after another, never overlapping
+  };
+
+  var editToggleBtn = el('button', {
+    type: 'button',
+    class: 'btn ghost edit-toggle',
+    'aria-label': 'Edit this person',
+    text: 'Edit',
+    onclick: toggleEdit
+  });
+  els.detailClose.parentNode.insertBefore(editToggleBtn, els.detailClose);
+  els.editToggle = editToggleBtn;
+
+  function toggleEdit() {
+    var id = state.selectedId;
+    if (!id || !state.index || !state.index.byId.has(id)) return;
+    if (edit.on) {
+      leaveEdit();
+      renderDetail(id);
+    } else {
+      edit.on = true;
+      edit.id = id;
+      els.editToggle.textContent = 'Done';
+      els.editToggle.setAttribute('aria-label', 'Finish editing');
+      els.detail.classList.add('editing');
+      renderEdit(id);
+    }
+  }
+
+  /** Save anything pending, then drop back to "not editing". The caller
+   *  decides what the panel shows next. */
+  function leaveEdit() {
+    if (!edit.on) return;
+    flushSave();
+    edit.on = false;
+    edit.id = null;
+    edit.form = null;
+    els.editToggle.textContent = 'Edit';
+    els.editToggle.setAttribute('aria-label', 'Edit this person');
+    els.detail.classList.remove('editing');
+  }
+
+  /** Called by select() while editing the same person (the post-save
+   *  reload re-selects them): keep the live form, rebuild only if it's gone. */
+  function syncEdit(id) {
+    var f = edit.form;
+    if (f && f.id === id && els.detailBody.contains(f.root)) {
+      els.detail.hidden = false;
+      return;
+    }
+    renderEdit(id);
+  }
+
+  function scheduleSave() {
+    if (!edit.form) return;
+    clearTimeout(edit.timer);
+    edit.timer = setTimeout(fireSave, EDIT_DEBOUNCE_MS);
+  }
+
+  function flushSave() {
+    if (!edit.timer) return;
+    clearTimeout(edit.timer);
+    fireSave();
+  }
+
+  function fireSave() {
+    edit.timer = null;
+    var f = edit.form;
+    if (!f) return;
+    // Read the form NOW (it may be gone by the time the save runs), but merge
+    // into the data only when the previous save has finished and reloaded.
+    var values = readEditForm(f);
+    edit.chain = edit.chain
+      .then(function () { return commitSave(f, values); })
+      .catch(function (err) { showEditErrors(f, ['Save failed: ' + (err && err.message ? err.message : String(err))]); });
+  }
+
+  // ---- form building
+
+  var editUid = 0;
+  function editId(name) { editUid += 1; return 'ef-' + name + '-' + editUid; }
+
+  function editField(label, control, forId) {
+    return el('div', { class: 'ef-field' }, [
+      el('label', { class: 'ef-label', for: forId || null, text: label }),
+      control
+    ]);
+  }
+
+  function editSelect(id, options, value) {
+    var s = el('select', { id: id, class: 'ef-input' }, options.map(function (o) {
+      return el('option', { value: o[0], text: o[1] });
+    }));
+    s.value = value;
+    return s;
+  }
+
+  /** Number input plus an "Unknown" checkbox; ticking it disables the number. */
+  function editNumberUnknown(name, value, min) {
+    var id = editId(name);
+    var isUnknown = value === 'unknown';
+    var input = el('input', {
+      id: id, class: 'ef-input ef-num', type: 'number', inputmode: 'numeric', min: String(min), step: '1',
+      value: typeof value === 'number' && isFinite(value) ? String(value) : null,
+      disabled: isUnknown
+    });
+    var cb = el('input', { type: 'checkbox', class: 'ef-checkbox', checked: isUnknown });
+    cb.addEventListener('change', function () { input.disabled = cb.checked; });
+    return {
+      id: id, input: input, cb: cb,
+      node: el('div', { class: 'ef-row' }, [input, el('label', { class: 'ef-check' }, [cb, 'Unknown'])])
+    };
+  }
+
+  /** none / unknown, then every person of `gender` (minus `selfId`). A value
+   *  that isn't in that list (unset, odd gender, dangling id) is kept as an
+   *  extra option so opening the form never silently changes it. */
+  function parentOptions(gender, selfId, current) {
+    var people = state.people.filter(function (q) { return q.id !== selfId && q.gender === gender; });
+    var counts = {};
+    people.forEach(function (q) { var k = displayName(q).toLowerCase(); counts[k] = (counts[k] || 0) + 1; });
+    var opts = [['none', 'None'], ['unknown', 'Unknown']];
+    people.slice().sort(function (a, b) { return displayName(a).localeCompare(displayName(b)); })
+      .forEach(function (q) {
+        var label = displayName(q);
+        opts.push([q.id, counts[label.toLowerCase()] > 1 ? label + ' (' + q.id + ')' : label]);
+      });
+    var cur = current === null || current === undefined ? '' : String(current);
+    var present = opts.some(function (o) { return o[0] === cur; });
+    if (!present) {
+      var known = cur && state.index.byId.get(cur);
+      opts.unshift([cur, cur === '' ? 'Not recorded' : known ? displayName(known) : cur + ' (missing)']);
+    }
+    return { opts: opts, value: cur };
+  }
+
+  var STATE_OPTIONS = [['known', 'Known'], ['none', 'None'], ['unknown', 'Unknown']];
+
+  function renderEdit(id) {
+    var idx = state.index;
+    var p = idx.byId.get(id);
+    var f = { id: id, noteRows: [] };
+
+    f.title = el('h2', { text: displayName(p) });
+    f.chip = el('span', { class: 'save-chip', role: 'status', 'aria-live': 'polite', text: 'Saved ✓' });
+    f.errorBox = el('div', { class: 'ef-errors', role: 'alert', hidden: true });
+
+    var nameId = editId('name');
+    f.name = el('input', { id: nameId, class: 'ef-input', type: 'text', autocomplete: 'off', value: p.name || '' });
+
+    var genderId = editId('gender');
+    f.gender = editSelect(genderId, [['male', 'Male'], ['female', 'Female'], ['unknown', 'Unknown']],
+      p.gender === 'male' || p.gender === 'female' ? p.gender : 'unknown');
+
+    f.generation = editNumberUnknown('generation', p.generation, 1);
+    f.age = editNumberUnknown('age', p.age, 0);
+
+    var momId = editId('mom');
+    var momO = parentOptions('female', id, p.mom);
+    f.mom = editSelect(momId, momO.opts, momO.value);
+    var dadId = editId('dad');
+    var dadO = parentOptions('male', id, p.dad);
+    f.dad = editSelect(dadId, dadO.opts, dadO.value);
+
+    var spousesId = editId('spouses');
+    f.spouses = el('input', {
+      id: spousesId, class: 'ef-input', type: 'text', autocomplete: 'off', placeholder: 'Names, comma-separated',
+      value: idx.spousesOf.get(id).map(function (s) { return displayName(idx.byId.get(s)); }).join(', ')
+    });
+
+    f.states = {};
+    var stateFields = [['spousesState', 'Spouses list'], ['childrenState', 'Children list'], ['siblingsState', 'Siblings list']]
+      .map(function (pair) {
+        var sid = editId(pair[0]);
+        var cur = p[pair[0]] === 'none' || p[pair[0]] === 'unknown' ? p[pair[0]] : 'known';
+        f.states[pair[0]] = editSelect(sid, STATE_OPTIONS, cur);
+        return editField(pair[1], f.states[pair[0]], sid);
+      });
+
+    f.notesBox = el('div', { class: 'ef-notes' });
+    notesOf(p).forEach(function (n) { addNoteRow(f, n); });
+    var addNoteBtn = el('button', {
+      type: 'button', class: 'btn ef-btn', text: 'Add note',
+      onclick: function () {
+        // No save yet: an empty note can't pass validation, so wait for typing.
+        var row = addNoteRow(f, null);
+        row.textarea.focus();
+      }
+    });
+
+    f.root = el('form', {
+      class: 'edit-form',
+      novalidate: true,
+      onsubmit: function (e) { e.preventDefault(); flushSave(); },
+      oninput: scheduleSave,
+      onchange: scheduleSave
+    }, [
+      el('div', { class: 'ef-head' }, [f.title, f.chip]),
+      el('div', { class: 'subtitle', text: 'Editing - changes save automatically.' }),
+      f.errorBox,
+      editField('Name', f.name, nameId),
+      editField('Gender', f.gender, genderId),
+      editField('Generation', f.generation.node, f.generation.id),
+      editField('Age', f.age.node, f.age.id),
+      editField('Mom', f.mom, momId),
+      editField('Dad', f.dad, dadId),
+      editField('Spouses', f.spouses, spousesId),
+      el('div', { class: 'ef-states' }, stateFields),
+      editField('First mention', el('div', { class: 'ef-static', text: p.firstMention || 'Not recorded' })),
+      el('section', { class: 'notes-section' }, [el('h3', { text: 'Notes' }), f.notesBox, addNoteBtn])
+    ]);
+
+    edit.form = f;
+    els.detailBody.replaceChildren(f.root);
+    els.detail.hidden = false;
+    els.detail.scrollTop = 0;
+  }
+
+  /** One note: commentary textarea, refs input, Remove. `orig` keeps the
+   *  note's other fields (quotes) so a save doesn't lose them. */
+  function addNoteRow(f, n) {
+    var textId = editId('note-text');
+    var refsId = editId('note-refs');
+    var row = {
+      orig: n ? JSON.parse(JSON.stringify(n)) : null,
+      textarea: el('textarea', { id: textId, class: 'ef-input ef-textarea', rows: '4', text: n ? n.text : '' }),
+      refs: el('input', {
+        id: refsId, class: 'ef-input', type: 'text', autocomplete: 'off', placeholder: 'Genesis 2:7, Genesis 2:19',
+        value: n && Array.isArray(n.refs) ? n.refs.join(', ') : ''
+      })
+    };
+    row.root = el('div', { class: 'ef-note' }, [
+      editField('Note text', row.textarea, textId),
+      editField('Sources (comma-separated)', row.refs, refsId),
+      el('button', {
+        type: 'button', class: 'btn ef-btn ef-remove', text: 'Remove note',
+        onclick: function () {
+          f.noteRows = f.noteRows.filter(function (r) { return r !== row; });
+          row.root.remove();
+          scheduleSave();
+        }
+      })
+    ]);
+    f.noteRows.push(row);
+    f.notesBox.appendChild(row.root);
+    return row;
+  }
+
+  // ---- reading the form and saving
+
+  function readEditForm(f) {
+    var num = function (n) {
+      if (n.cb.checked) return 'unknown';
+      return n.input.value === '' ? null : Number(n.input.value);
+    };
+    var states = {};
+    Object.keys(f.states).forEach(function (k) { states[k] = f.states[k].value; });
+    return {
+      name: f.name.value.trim(),
+      gender: f.gender.value,
+      generation: num(f.generation),
+      age: num(f.age),
+      mom: f.mom.value,
+      dad: f.dad.value,
+      spousesText: f.spouses.value,
+      states: states,
+      notes: f.noteRows.map(function (r) { return { orig: r.orig, text: r.textarea.value, refsText: r.refs.value }; })
+    };
+  }
+
+  function splitList(text) {
+    return String(text).split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  }
+
+  /** Spouse names -> ids. Exact (case-insensitive) name or id first, then a
+   *  unique "contains" match; ties go to someone already married to `me`.
+   *  Anything unresolved is an error for the user, never a guess. */
+  function resolveSpouses(text, me, people, errs) {
+    var prior = state.index.byId.has(me.id) ? state.index.spousesOf.get(me.id) : [];
+    var ids = [];
+    splitList(text).forEach(function (name) {
+      var key = name.toLowerCase();
+      var pool = people.filter(function (q) {
+        return displayName(q).toLowerCase() === key || String(q.id).toLowerCase() === key;
+      });
+      if (!pool.length) {
+        pool = people.filter(function (q) { return q.id !== me.id && displayName(q).toLowerCase().indexOf(key) !== -1; });
+      }
+      if (pool.length > 1) {
+        var married = pool.filter(function (q) { return prior.indexOf(q.id) !== -1; });
+        if (married.length === 1) pool = married;
+      }
+      if (!pool.length) { errs.push('Spouses: no one named "' + name + '"'); return; }
+      if (pool.length > 1) {
+        errs.push('Spouses: "' + name + '" matches ' + pool.length + ' people (' +
+          pool.map(function (q) { return displayName(q) + ' [' + q.id + ']'; }).join(', ') + ') - type the full name');
+        return;
+      }
+      var s = pool[0];
+      if (s.id === me.id) { errs.push('Spouses: "' + name + '" is this person'); return; }
+      if ((me.gender === 'male' || me.gender === 'female') && s.gender === me.gender) {
+        errs.push('Spouses: "' + displayName(s) + '" is also ' + me.gender + ' (a union needs a mom and a dad)');
+        return;
+      }
+      if (ids.indexOf(s.id) === -1) ids.push(s.id);
+    });
+    return ids;
+  }
+
+  function commitSave(f, v) {
+    var people = JSON.parse(JSON.stringify(state.people));
+    var me = null;
+    people.forEach(function (q) { if (q.id === f.id) me = q; });
+    if (!me) { showEditErrors(f, ['This person is no longer in the data, so the change was not saved.']); return; }
+
+    me.name = v.name;
+    me.gender = v.gender;
+    me.generation = v.generation;
+    me.age = v.age;
+    ['mom', 'dad'].forEach(function (k) {
+      if (v[k] === '') delete me[k];
+      else me[k] = v[k];
+    });
+
+    var errs = [];
+    var spouseIds = resolveSpouses(v.spousesText, me, people, errs);
+    if (errs.length) { showEditErrors(f, errs, 'Not saved - fix the spouse names:'); return; }
+    me.spouses = spouseIds;
+    // Marriages are stored on both people: add/remove `me` on every other side.
+    people.forEach(function (q) {
+      if (q.id === me.id) return;
+      var list = Array.isArray(q.spouses) ? q.spouses : [];
+      var has = list.indexOf(me.id) !== -1;
+      var want = spouseIds.indexOf(q.id) !== -1;
+      if (want && !has) {
+        q.spouses = list.concat([me.id]);
+        delete q.spousesState; // a non-empty list is "known"
+      } else if (!want && has) {
+        q.spouses = list.filter(function (x) { return x !== me.id; });
+      }
+    });
+
+    Object.keys(v.states).forEach(function (k) {
+      var val = v.states[k];
+      if (k === 'spousesState' && spouseIds.length) {
+        val = 'known';
+        if (f.states[k].value !== 'known') f.states[k].value = 'known';
+      }
+      if (val === 'known') delete me[k];
+      else me[k] = val;
+    });
+
+    if (v.notes.length || me.notes !== undefined) {
+      me.notes = v.notes.map(function (n) {
+        var out = n.orig ? JSON.parse(JSON.stringify(n.orig)) : {};
+        out.text = n.text.trim();
+        out.refs = splitList(n.refsText);
+        // A quote must cite one of the note's refs; drop quotes whose ref was removed.
+        if (Array.isArray(out.quotes)) {
+          out.quotes = out.quotes.filter(function (q) { return q && out.refs.indexOf(q.ref) !== -1; });
+          if (!out.quotes.length) delete out.quotes;
+        }
+        return out;
+      });
+    }
+
+    return fetch('/api/people', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify(people)
+    }).then(function (res) {
+      return res.text().then(function (body) {
+        var json;
+        try { json = JSON.parse(body); } catch (e) { json = null; }
+        if (res.ok && json && json.ok) {
+          clearEditErrors(f);
+          f.title.textContent = v.name || f.id;
+          flashSaved(f);
+          return reloadAfterSave();
+        }
+        var problems = json && Array.isArray(json.problems) && json.problems.length ? json.problems
+          : [(json && json.error) || ('Server responded ' + res.status)];
+        showEditErrors(f, problems, 'Not saved - fix these and it will save automatically:');
+      });
+    }, function () {
+      showEditErrors(f, ['Could not reach the server, so this change is NOT saved. Check the connection; your next edit will try again.']);
+    });
+  }
+
+  /** Re-fetch and re-render through init(), the normal load path. The save
+   *  already succeeded, so a failed reload just leaves the old view up. */
+  function reloadAfterSave() {
+    return fetch('/api/people', { cache: 'no-store' })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (raw) { if (Array.isArray(raw)) init(raw); })
+      .catch(function () {});
+  }
+
+  function showEditErrors(f, problems, heading) {
+    var lines = Array.isArray(problems) ? problems : [String(problems)];
+    if (!f.root || !els.detailBody.contains(f.root)) {
+      // The form was closed before this save came back: still tell the user.
+      window.alert('Your last edit was not saved:\n\n' + lines.join('\n'));
+      return;
+    }
+    f.errorBox.hidden = false;
+    f.errorBox.replaceChildren(
+      el('strong', { text: heading || 'Not saved:' }),
+      el('ul', null, lines.map(function (t) { return el('li', { text: t }); }))
+    );
+    f.errorBox.scrollIntoView({ block: 'nearest' });
+  }
+
+  function clearEditErrors(f) {
+    f.errorBox.hidden = true;
+    f.errorBox.replaceChildren();
+  }
+
+  function flashSaved(f) {
+    f.chip.classList.remove('show');
+    void f.chip.offsetWidth; // restart the fade on back-to-back saves
+    f.chip.classList.add('show');
+    clearTimeout(edit.chipTimer);
+    edit.chipTimer = setTimeout(function () { f.chip.classList.remove('show'); }, 1500);
   }
 
   els.detailClose.addEventListener('click', closeDetail);

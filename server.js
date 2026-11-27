@@ -61,6 +61,59 @@ function handleApiPeople(res) {
   });
 }
 
+// POST /api/people: the edit-mode auto-save. The browser sends the FULL
+// people array; it is validated with the same family.js rules the UI and the
+// tests use, and only a clean array is written. The write is atomic (temp
+// file + rename) so a crash mid-write can never leave a half-written file.
+const MAX_BODY = 2000000;
+
+function handleApiPeoplePost(req, res) {
+  const chunks = [];
+  let size = 0;
+  let tooBig = false;
+  req.on('data', (c) => {
+    if (tooBig) return;
+    size += c.length;
+    if (size > MAX_BODY) {
+      tooBig = true;
+      sendJson(res, 413, { error: 'Request body too large (limit ' + MAX_BODY + ' bytes)' });
+      return;
+    }
+    chunks.push(c);
+  });
+  req.on('error', () => {
+    if (!res.headersSent) sendJson(res, 400, { error: 'Could not read request body' });
+  });
+  req.on('end', () => {
+    if (tooBig) return;
+    try {
+      let body;
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      } catch (e) {
+        return sendJson(res, 400, { error: 'Body is not valid JSON: ' + e.message });
+      }
+      if (!Array.isArray(body)) {
+        return sendJson(res, 400, { error: 'Body must be a JSON array of people', problems: ['Body must be a JSON array of people'] });
+      }
+      const notObject = body.findIndex((p) => !p || typeof p !== 'object' || Array.isArray(p));
+      if (notObject !== -1) {
+        const msg = 'Entry #' + notObject + ' is not an object';
+        return sendJson(res, 400, { error: msg, problems: [msg] });
+      }
+      const problems = require('./public/family.js').validate(body);
+      if (problems.length) return sendJson(res, 400, { problems });
+      const tmp = DATA_FILE + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(body, null, 2) + '\n', 'utf8');
+      fs.renameSync(tmp, DATA_FILE);
+      sendJson(res, 200, { ok: true, count: body.length });
+    } catch (e) {
+      console.error('Saving people failed:', e);
+      if (!res.headersSent) sendJson(res, 500, { error: 'Could not save data file: ' + (e.code || e.message) });
+    }
+  });
+}
+
 // mentions.json is optional (repeated-name overrides), so a missing file is
 // simply "no overrides": 200 with {}. Re-read per request, like people.json.
 function handleApiMentions(res) {
@@ -112,6 +165,9 @@ function serveStatic(urlPath, res) {
 
 const server = http.createServer((req, res) => {
   try {
+    if (req.method === 'POST' && new URL(req.url, 'http://localhost').pathname === '/api/people') {
+      return handleApiPeoplePost(req, res);
+    }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405, { Allow: 'GET, HEAD' });
       return res.end('Method not allowed');
